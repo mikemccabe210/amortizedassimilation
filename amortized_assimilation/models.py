@@ -240,7 +240,7 @@ class ConvEnAF(nn.Module):
             n_in = 11
         else:
             n_in = 10
-        self.lin_net = nn.Sequential(nn.Conv1d(n_in, hidden_size, kernel_size = 5,
+        self.base_net = nn.Sequential(nn.Conv1d(n_in, hidden_size, kernel_size = 5,
                                          padding = 2, padding_mode = 'circular',
                                          groups = 1),
                                      nn.LayerNorm(40),
@@ -257,35 +257,43 @@ class ConvEnAF(nn.Module):
                                          groups = 1),
                                       nn.LayerNorm(40),
                                  nn.LeakyReLU(),
-                                     SpatialDropout1d(do),
-                                nn.Conv1d(hidden_size, 7, kernel_size = 5,
-                                         padding = 2, dilation = 1, padding_mode = 'circular',
-                                         groups = 1),
+                                      SpatialDropout1d(do),
+                                      nn.Conv1d(hidden_size, 14, kernel_size=5,
+                                                padding=2, dilation=1, padding_mode='circular',
+                                                groups=1)
                                    )
-        # Sigmoid components                
+        # self.lin_net = nn.Sequential(SpatialDropout1d(do),
+        #                                 nn.Conv1d(hidden_size, 7, kernel_size = 5,
+        #                                  padding = 2, dilation = 1, padding_mode = 'circular',
+        #                                  groups = 1),)
+        # # Sigmoid components
+        # self.sig_net = nn.Sequential(SpatialDropout1d(do),
+        #                                 nn.Conv1d(hidden_size, 7, kernel_size = 5,
+        #                                  padding = 2, dilation = 1, padding_mode = 'circular',
+        #                                  groups = 1), nn.Sigmoid())
 
-        self.sig_net = nn.Sequential(nn.Conv1d(n_in, hidden_size, kernel_size = 5,
-                                         padding = 2, padding_mode = 'circular',
-                                         groups = 1),
-                                     nn.LayerNorm(40),
-                                    nn.LeakyReLU(),
-                                     SpatialDropout1d(do),
-                                    nn.Conv1d(hidden_size, hidden_size, kernel_size = 5,
-                                         padding = 2, dilation = 1,  padding_mode = 'circular',
-                                         groups = 1),
-                                      nn.LayerNorm(40),
-                                 nn.LeakyReLU(),
-                                     SpatialDropout1d(do),
-                                       nn.Conv1d(hidden_size, hidden_size, kernel_size = 5,
-                                         padding = 2, dilation = 1,  padding_mode = 'circular',
-                                         groups = 1),
-                                      nn.LayerNorm(40),
-                                 nn.LeakyReLU(),
-                                     SpatialDropout1d(do),
-                                nn.Conv1d(hidden_size, 7, kernel_size = 5,
-                                         padding = 2, dilation = 1, padding_mode = 'circular',
-                                         groups = 1),
-                                 nn.Sigmoid())
+        # self.sig_net = nn.Sequential(nn.Conv1d(n_in, hidden_size, kernel_size = 5,
+        #                                  padding = 2, padding_mode = 'circular',
+        #                                  groups = 1),
+        #                              nn.LayerNorm(40),
+        #                             nn.LeakyReLU(),
+        #                              # SpatialDropout1d(do),
+        #                             nn.Conv1d(hidden_size, hidden_size, kernel_size = 5,
+        #                                  padding = 2, dilation = 1,  padding_mode = 'circular',
+        #                                  groups = 1),
+        #                               nn.LayerNorm(40),
+        #                          nn.LeakyReLU(),
+        #                              # SpatialDropout1d(do),
+        #                                nn.Conv1d(hidden_size, hidden_size, kernel_size = 5,
+        #                                  padding = 2, dilation = 1,  padding_mode = 'circular',
+        #                                  groups = 1),
+        #                               nn.LayerNorm(40),
+        #                          nn.LeakyReLU(),
+        #                              # SpatialDropout1d(do),
+        #                         nn.Conv1d(hidden_size, 7, kernel_size = 5,
+        #                                  padding = 2, dilation = 1, padding_mode = 'circular',
+        #                                  groups = 1),
+        #                          nn.Sigmoid())
         
         
     def forward(self, observation, state, memory, mask = None, tols = (1e-3, 1e-5),
@@ -331,18 +339,16 @@ class ConvEnAF(nn.Module):
         c_in = torch.cat([c_in, memory], dim = 1)
         # print(c_in.shape)
 
+        base = self.base_net(c_in).squeeze()
         # Linear subnets
-        adj = self.lin_net(c_in).squeeze()
-        # print(adj.shape)
-        adj, x_mem = adj.split([1, 6], 1)   
+        # adj = self.lin_net(base).squeeze()
+        adj, x_mem, filt, mem_clear = base.split([1, 6, 1, 6], 1)
         # Sigmoid subnets
-        filt = self.sig_net(c_in).squeeze()
-        filt, mem_clear = filt.split([1, 6], 1)
-
+        # filt = self.sig_net(base).squeeze()
+        # filt, mem_clear = filt.split([1, 6], 1)
         # Autoregressive state estimate updates
-        memory = mem_clear*memory + x_mem #* filt_mem
-        x = filt.squeeze()*state + adj.squeeze()
-
+        memory = torch.sigmoid(mem_clear)*memory + x_mem #* filt_mem
+        x = torch.sigmoid(filt.squeeze())*state + adj.squeeze()
         # Forward model
         # TODO: This should definitely happen at the beginning of an assimilation
         # cycle instead of the end but went here in an earlier version where it 

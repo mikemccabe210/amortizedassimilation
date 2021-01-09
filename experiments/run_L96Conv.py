@@ -19,17 +19,17 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
     """ Training loop """
     ntypes = len(obs_dict)
     for batch_y0 in loader:
-        batch_y0 = batch_y0.to(device = device)
+        batch_y0 = batch_y0.to(device=device)
         optimizer.zero_grad()
         # Save noiseless data for comparison
         noiseless = batch_y0.clone().detach()
         # Generate noisy batch
-        batch_y0 += torch.randn_like(batch_y0) * noise 
-        states = torch.zeros_like(batch_y0)[0]
+        batch_y0 += torch.randn_like(batch_y0, device=device) * noise
+        # states = torch.zeros_like(batch_y0)[0]
 
         # Sample from prior
         pred_y1 = noiseless[0].unsqueeze(1).repeat(1, m, 1)
-        pred_y1 = pred_y1 + torch.randn_like(pred_y1)*noise
+        pred_y1 = pred_y1 + torch.randn_like(pred_y1, device=device)*noise
 
         # Store everything
         preds_y, preds_y1, filts_y, filts_y1 = [], [], [], []
@@ -38,7 +38,7 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
         known_inds_tp1 = []
         
         # Init components
-        memory = torch.zeros(pred_y1.shape[0] * m, 6, 40, device = device)
+        memory = torch.zeros(pred_y1.shape[0] * m, 6, 40, device=device)
         next_type = np.random.randint(0, ntypes)
         # Iterate over timesteps in batch
         for i, xi in enumerate(batch_y0):
@@ -79,14 +79,14 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
             preds_y1 += [pred_y1]
             
         # Concat outputs
-        pred_y_list = torch.stack(preds_y)
-        pred_y1_list = torch.stack(preds_y1)
-        filtered_pred = torch.stack(preds_y_filt)
+        # pred_y_list = torch.stack(preds_y)
+        # pred_y1_list = torch.stack(preds_y1)
+        # filtered_pred = torch.stack(preds_y_filt)
         filtered_pred_y1 = torch.stack(preds_y1_filt)
         filt_y = torch.stack(filts_y)
 
         # Loss functions
-        noisy_analysis_loss = torch.mean(torch.sum((filtered_pred[1:] - filt_y[1:])**2, dim = 2))
+        # noisy_analysis_loss = torch.mean(torch.sum((filtered_pred[1:] - filt_y[1:])**2, dim = 2))
         forecast_loss = torch.mean(torch.sum((filtered_pred_y1[known_inds_tp1].mean(dim = 2) 
                                       - filt_y[known_inds_t])**2, dim = 2))
         forecast_loss.backward()
@@ -149,13 +149,13 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--m', type=int, default=10)
     parser.add_argument('--n', type=int, default=40)
-    parser.add_argument('--hidden_size', type=int, default=32)
-    parser.add_argument('--noise', type=float, default=2.5)
+    parser.add_argument('--hidden_size', type=int, default=64)
+    parser.add_argument('--noise', type=float, default=1)
     parser.add_argument('--epochs', type=int, default=500)
-    parser.add_argument('--steps_valid', type=int, default=200)
+    parser.add_argument('--steps_valid', type=int, default=1000)
     parser.add_argument('--steps_test', type=int, default=5000)
     parser.add_argument('--check_disk', action='store_false')
-    parser.add_argument('--obs_conf', type=str, default = 'every_4th_dim_partial_obs')
+    parser.add_argument('--obs_conf', type=str, default='every_4th_dim_partial_obs')
     parser.add_argument('--do', type=float, default = .2)
     parser.add_argument('--device', type=str, default = 'gpu')
     parser.add_argument('--checkpoint', type=int, default=50)
@@ -184,15 +184,15 @@ if __name__ == '__main__':
     # Set up model
     model = MultiObs_ConvEnAF(args.n, args.hidden_size, input_types=input_types, 
                              m = args.m, missing = missing, do = args.do)
-    # model.load_state_dict(torch.load('models/convref_lorenz96_partial_0.6686_1.0std_500iters_32filt'))
+    # model.load_state_dict(torch.load('models/2021-01-07_10-36lorenz96_partial_2.5std_32layers/convref_lorenz96_partial_1.5587_2.5std_150iters_32filt'))
     model = model.to(device = device)
     optimizer = optim.AdamW(model.parameters(), lr=5e-3, weight_decay = 0)
     dummy_sched = dummy()
     dummy_sched.step = lambda: None
     
-    data = ChunkedTimeseries(true_y, args.batch_steps, .95)
+    data = ChunkedTimeseries(true_y, args.batch_steps, .5)
     loader = DataLoader(data, batch_size=args.batch_size,
-                        shuffle=True, num_workers=0, collate_fn = TimeStack())
+                        shuffle=True, num_workers=0, collate_fn=TimeStack())
     if args.obs_conf == 'full_obs':
         otype = 'full'
     else:
