@@ -63,14 +63,14 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, device
             preds_y1 += [pred_y1]
             
         # Concat outputs
-        pred_y_list = torch.stack(preds_y)
-        pred_y1_list = torch.stack(preds_y1)
+        # pred_y_list = torch.stack(preds_y)
+        # pred_y1_list = torch.stack(preds_y1)
         filtered_pred = torch.stack(preds_y_filt)
         filtered_pred_y1 = torch.stack(preds_y1_filt)
         filt_y = torch.stack(filts_y)
 
         # Loss functions
-        noisy_analysis_loss = torch.mean(torch.sum((filtered_pred[1:] - filt_y[1:])**2, dim = 2))
+        # noisy_analysis_loss = torch.mean(torch.sum((filtered_pred[1:] - filt_y[1:])**2, dim = 2))
         forecast_loss = torch.mean(torch.sum((filtered_pred_y1[known_inds_tp1].mean(dim = 2) 
                                       - filt_y[known_inds_t])**2, dim = 2))
         forecast_loss.backward()
@@ -98,8 +98,8 @@ def assimilate_unseen_obs_ens(model, data, state, m, obs_dict, device):
     """ Executes online assimilation"""
     preds = []
     states = []
-    filtered_preds = []
-    filtered_obs = []
+    # filtered_preds = []
+    # filtered_obs = []
     ensembles = []
     memory = torch.zeros(m, 4, 128, device = device)
     
@@ -125,9 +125,9 @@ if __name__ == '__main__':
     parser.add_argument('--step_size', type=float, default=.5)
     parser.add_argument('--batch_steps', type=int, default=40)
     parser.add_argument('--batch_size', type=int, default=128)
-    parser.add_argument('--m', type=int, default=10)
+    parser.add_argument('--m', type=int, default=8)
     parser.add_argument('--n', type=int, default=128)
-    parser.add_argument('--hidden_size', type=int, default=32)
+    parser.add_argument('--hidden_size', type=int, default=24)
     parser.add_argument('--noise', type=float, default=1.)
     parser.add_argument('--epochs', type=int, default=500)
     parser.add_argument('--steps_valid', type=int, default=1000)
@@ -144,18 +144,18 @@ if __name__ == '__main__':
         device = torch.device('cpu')
 
     t = torch.arange(0, args.train_steps*args.step_size, args.step_size)
-    true_y, true_y_valid, true_y_test = gen_data('ks', t, args.steps_test, args.steps_valid, step = .01,
+    true_y, true_y_valid, true_y_test = gen_data('ks', t, args.steps_test, args.steps_valid, step = .5,
                                                   check_disk = True)
 
-    
+    print(true_y.shape)
     input_types, obs_dict, known_h = obs_configs.KS_configs[args.obs_conf]
     ntypes = len(obs_dict)
-    # Set up model - ODE is hardcoded so actual dynamics here doesn't matter
+    # Set up model - ODE is hardcoded so parameterized dynamics here doesn't matter
     model = MultiObs_KSConvEnAF(args.n,args. hidden_size, ode_func = L63(),
                          input_types=input_types, m = args.m, device = device, do = args.do)
     model = model.to(device = device)
     
-    optimizer = optim.AdamW(model.parameters(), lr=5e-3,
+    optimizer = optim.AdamW(model.parameters(), lr=1e-3,
                             weight_decay = 0)
     dummy_sched = dummy()
     dummy_sched.step = lambda: None
