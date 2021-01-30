@@ -8,6 +8,7 @@ import time
 import datetime
 import numpy as np
 import obs_configs
+import csv
 
 from torchdiffeq import odeint
 from torch.utils.data import DataLoader
@@ -18,6 +19,7 @@ from amortized_assimilation.operators import filter_obs, mystery_operator
 def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indices, device, missing = False):
     """ Training loop """
     ntypes = len(obs_dict)
+    var_ra = None
     for batch_y0 in loader:
         batch_y0 = batch_y0.to(device=device)
         optimizer.zero_grad()
@@ -77,9 +79,15 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
             next_type = np.random.randint(0, ntypes)
             preds_y1_filt += [obs_dict[str((next_type) % ntypes)](pred_y1)]
             preds_y1 += [pred_y1]
+            with torch.no_grad():
+                if var_ra is None:
+                    var_ra = torch.std(ens, 1).mean()
+                else:
+                    var_ra += torch.std(ens, 1).mean()
+                    var_ra /= 2
             
         # Concat outputs
-        # pred_y_list = torch.stack(preds_y)
+        pred_y_list = torch.stack(preds_y)
         # pred_y1_list = torch.stack(preds_y1)
         # filtered_pred = torch.stack(preds_y_filt)
         filtered_pred_y1 = torch.stack(preds_y1_filt)
@@ -92,6 +100,11 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
         forecast_loss.backward()
         optimizer.step()
         scheduler.step()
+    with torch.no_grad():
+        l = torch.mean(torch.mean((pred_y_list
+                                      - noiseless)**2, dim = 2)**.5)
+        print('Iter {:04d} | Train Loss {:.6f} | ens_std {:.6f}'.format(epoch, l.item(), var_ra.item()))
+    return l
 
 def test(epoch, start_time, base_data, noise, m, model, obs_dict, indices, device, missing = False):
     """Test loop"""
@@ -105,7 +118,18 @@ def test(epoch, start_time, base_data, noise, m, model, obs_dict, indices, devic
         pred_y_test, _, _, ens = assimilate_unseen_obs_ens(model, noisy_test, state, m,
                                                            obs_dict, indices, device, missing)
         loss = torch.mean(torch.mean((pred_y_test.cpu() - base_data.squeeze())**2, dim = 1)**.5)
-        print('Iter {:04d} | Total Loss {:.6f} | Time {:.1f}'.format(epoch, loss.item(), time.time() - start_time))
+        n = ens.shape[0]
+        ens_std = [torch.std(ens[i*(n//10):(i+1)*(n//10)], 1).mean().item() for i in range(10)]
+        ens_std_s = [format(torch.std(ens[i*(n//10):(i+1)*(n//10)], 1).mean().item(), '.4f') for i in range(10)]
+        ens_loss = [format(torch.mean(torch.mean((pred_y_test.cpu()[i*(n//10):(i+1)*(n//10)]
+                                           - base_data.squeeze()[i*(n//10):(i+1)*(n//10)])**2, dim = 1)**.5).item(),
+                           '.4f')
+                    for i in range(10)]
+        print('Iter {:04d} | Test Loss {:.6f} | test_std {:.4f} | Time {:.1f}'.format(epoch, loss.item(),
+                                                                                      sum(ens_std)/10.,
+                                                                                      time.time() - start_time))
+        print('Segmentwise loss/std', list(zip(ens_loss, ens_std_s)))
+        # print('Iter {:04d} | Total Loss {:.6f} | Time {:.1f}'.format(epoch, loss.item(), time.time() - start_time))
         return loss
     
 def assimilate_unseen_obs_ens(model, data, state, m, obs_dict, indices, device, missing):
@@ -114,6 +138,7 @@ def assimilate_unseen_obs_ens(model, data, state, m, obs_dict, indices, device, 
     states = []
     filtered_preds = []
     filtered_obs = []
+    ensembles = []
     memory = torch.zeros(m, 6, 40, device = device)
     
     for i, obsi in enumerate(data):
@@ -133,8 +158,11 @@ def assimilate_unseen_obs_ens(model, data, state, m, obs_dict, indices, device, 
                                               )
         states.append(state)
         preds.append(pred)
+        ensembles.append(ens)
+
         i += 1
-    return torch.stack(preds, dim = 0).squeeze(), torch.stack(states, dim = 0).squeeze(), memory, ens
+    return (torch.stack(preds, dim = 0).squeeze(), torch.stack(states, dim = 0).squeeze(),
+            memory, torch.stack(ensembles, dim = 0).squeeze())
     
     
 if __name__ == '__main__':
@@ -146,13 +174,13 @@ if __name__ == '__main__':
     parser.add_argument('--train_steps', type=int, default=240_000)
     parser.add_argument('--step_size', type=float, default=.1)
     parser.add_argument('--batch_steps', type=int, default=40)
-    parser.add_argument('--batch_size', type=int, default=156)
+    parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--m', type=int, default=10)
     parser.add_argument('--n', type=int, default=40)
     parser.add_argument('--hidden_size', type=int, default=64)
-    parser.add_argument('--noise', type=float, default=2.5)
+    parser.add_argument('--noise', type=float, default=1.)
     parser.add_argument('--epochs', type=int, default=500)
-    parser.add_argument('--steps_valid', type=int, default=3000)
+    parser.add_argument('--steps_valid', type=int, default=1000)
     parser.add_argument('--steps_test', type=int, default=10000)
     parser.add_argument('--check_disk', action='store_false')
     parser.add_argument('--obs_conf', type=str, default='every_4th_dim_partial_obs')
@@ -175,6 +203,7 @@ if __name__ == '__main__':
     t = torch.arange(0, args.train_steps*args.step_size, args.step_size)
     true_y, true_y_valid, true_y_test = gen_data('lorenz96', t, args.steps_test,
                                                  args.steps_valid, check_disk=args.check_disk)
+    print(true_y.max(dim = 0))
     
     # Set up obs operators - uses full obs for input types since only one network is used
     input_types, obs_dict, indices, known_h = obs_configs.lorenz_configs[args.obs_conf]
@@ -190,7 +219,7 @@ if __name__ == '__main__':
     # model.load_state_dict(torch.load('models/2021-01-09_09-44lorenz96_partial_1.0std_64layers/convref_lorenz96_partial_0.6246_1.0std_500iters_64filt'))
     model = model.to(device = device)
     # print(model)
-    optimizer = optim.AdamW(model.parameters(), lr=5e-3, weight_decay = 0)
+    optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay = 0)
     dummy_sched = dummy()
     dummy_sched.step = lambda: None
     
@@ -207,13 +236,17 @@ if __name__ == '__main__':
     start_time = time.time()
     # Training
     itr = 0
+    train_losses = []
+    test_losses = []
     for itr in range(1, args.epochs + 1):
         if itr <= 50:
             optimizer.param_groups[0]['lr'] *= 1.03
         else:
             optimizer.param_groups[0]['lr'] *= .993
-        train(itr, loader, args.noise, args.m, model, optimizer, dummy_sched, obs_dict, indices, device, missing)
+        tloss = train(itr, loader, args.noise, args.m, model, optimizer, dummy_sched, obs_dict, indices, device, missing)
         loss = test(itr, start_time, true_y_valid, args.noise, args.m, model, obs_dict, indices, device, missing)
+        train_losses.append(tloss.item())
+        test_losses.append(loss.item())
         if itr % args.checkpoint == 0:
             torch.save(model.state_dict(), folder_name + '/convref_%s_%s_%.4f_%.1fstd_%diters_%dfilt'
                        % (args.dynamics, otype, loss, args.noise, itr, args.hidden_size))
@@ -223,3 +256,9 @@ if __name__ == '__main__':
     test_loss = test(itr, start_time, true_y_test, args.noise, args.m, model, obs_dict, indices, device, missing)
     torch.save(model.state_dict(), folder_name + '/final_convref_%s_%s_%.4f_%.1fstd_%diters_%dfilt'
                            % (args.dynamics, otype, test_loss, args.noise, itr, args.hidden_size))
+    with open(folder_name + '/train_loss_log', 'w', newline='') as myfile:
+        wr = csv.writer(myfile, quoting=csv.QUOTE_ALL)
+        wr.writerow(train_losses)
+    with open(folder_name + '/test_loss_log', 'w', newline='') as myfile:
+        wr = csv.writer(myfile, quoting=csv.QUOTE_ALL)
+        wr.writerow(test_losses)
