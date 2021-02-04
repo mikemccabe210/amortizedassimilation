@@ -516,6 +516,138 @@ class ConvEnAF(nn.Module):
 
         return analysis, state, ens, memory
 
+
+class ConvEnAFMIMO(nn.Module):
+    """ EnAF using convolutional base networks
+
+    Used to assimilate a specific observation type. The ConvEnAF trains
+    a regression model to predict the next noisy observation using
+    the current noisy observation and an a priori specified set
+    of differentiable system dynamics.
+
+    Args
+    ----
+    obs_size : int
+        Size of observation vector
+    hidden_size : int
+        Size of memory and hidden state for all dense layers. Memory/hidden sized tied
+        implementation convenience, but do not have to be.
+    state_size : int
+        Size of full system state
+    ode_func : nn.Module
+        Differentiable numerical model used to push system state forward
+    m : int
+        Ensemble size
+    do : float
+        dropout rate
+    """
+
+    def __init__(self, obs_size, hidden_size, state_size, ode_func, m, do=.1, missing=False):
+        super(ConvEnAFMIMO, self).__init__()
+        # Dims
+        self.m = m
+        self.n_i = obs_size
+        self.n_h = hidden_size
+        self.n_o = state_size
+        self.ode_func = ode_func
+
+        # Linear components
+
+        if missing:
+            n_in = 11
+        else:
+            n_in = 10
+        self.base_net = nn.Sequential(nn.Conv1d(n_in, hidden_size, kernel_size=5,
+                                                padding=2, padding_mode='circular',
+                                                groups=1),
+                                      nn.LayerNorm([hidden_size, 40]),
+                                      nn.SiLU(),
+                                      SpatialDropout1d(do),
+                                      nn.Conv1d(hidden_size, hidden_size, kernel_size=5,
+                                                padding=2, dilation=1, padding_mode='circular',
+                                                groups=1),
+                                      nn.LayerNorm([hidden_size, 40]),
+                                      nn.SiLU(),
+                                      SpatialDropout1d(do),
+                                      nn.Conv1d(hidden_size, hidden_size, kernel_size=5,
+                                                padding=2, dilation=1, padding_mode='circular',
+                                                groups=1),
+                                      nn.LayerNorm([hidden_size, 40]),
+                                      nn.SiLU(),
+                                      SpatialDropout1d(do),
+                                      nn.Conv1d(hidden_size, 14, kernel_size=5,
+                                                padding=2, dilation=1, padding_mode='circular',
+                                                groups=1)
+                                      )
+
+    def forward(self, observation, state, memory, mask=None, tols=(1e-3, 1e-5),
+                interval=torch.Tensor([0, .1])):
+        """Forward pass for the model
+
+        Args
+        ----
+        observation : torch.Tensor
+            Noisy observation vector generated from some function of true state
+        state : torch.Tensor
+            Current state estimate for system
+        memory_states : d
+            df
+        tols : tuple(float, float)
+            Relative and absolute tolerance for adaptive integrators
+        interval : torch.Tensor size = (2,)
+            Integration time for forward model.
+
+        Returns:
+            analysis : torch.Tensor
+                Analysis point estimate of current system state
+            state : torch.Tensor
+                Ensemble estimate pushed forward to next time step
+            ens : torch.Tensor
+                Current ensemble of state estimates
+            memory_states :
+                Memory dict
+        """
+        rtol, atol = tols
+        # Reshape Inputs
+        state_var, state_mean = torch.var_mean(state, dim=1, keepdim=True)
+        state_var = state_var.repeat(1, self.m, 1)
+        state_var = state_var.reshape(-1, self.n_o)
+        state = state.reshape(-1, self.n_o)
+        ddt = self.ode_func(0, state)
+        observation = observation.reshape(-1, self.n_o)
+        if mask is None:
+            c_in = torch.stack([observation, state, ddt, state_var], dim=1)
+        else:
+            mask = mask.reshape(-1, self.n_o)
+            c_in = torch.stack([observation, state, ddt, state_var, mask], dim=1)
+        c_in = torch.cat([c_in, memory], dim=1)
+        # print(c_in.shape)
+
+        base = self.base_net(c_in).squeeze()
+        # Linear subnets
+        # adj = self.lin_net(base).squeeze()
+        adj, x_mem, filt, mem_clear = base.split([1, 6, 1, 6], 1)
+        # Sigmoid subnets
+        # Autoregressive state estimate updates
+        memory = torch.sigmoid(mem_clear) * memory + x_mem  # * filt_mem
+        x = torch.sigmoid(filt.squeeze()) * state + adj.squeeze()
+        # Forward model
+        # TODO: This should definitely happen at the beginning of an assimilation
+        # cycle instead of the end but went here in an earlier version where it
+        # made more sense.
+        state = odeint(self.ode_func, x, interval, rtol=rtol, atol=atol,
+                       method='rk4', options={'step_size': .05})[-1]
+
+        # Debugging tool to track forward evals for adaptive integrators
+        self.ode_func.fe = 0
+
+        # Reshape outputs
+        ens = x.view(-1, self.m, self.n_o)
+        analysis = ens.mean(dim=1)
+        state = state.view(-1, self.m, self.n_o)
+
+        return analysis, state, ens, memory
+
 class ConvEnAF2d(nn.Module):
     """ EnAF using convolutional base networks
 
