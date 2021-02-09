@@ -9,12 +9,9 @@ import datetime
 import numpy as np
 import obs_configs
 
-from torchdiffeq import odeint
 from torch.utils.data import DataLoader
 from amortized_assimilation.data_utils import ChunkedTimeseries, L96, L63, TimeStack, gen_data
-from amortized_assimilation.models import MultiObs_KSConvEnAF, MultiObs_KSConvEnAF2d
-from amortized_assimilation.operators import filter_obs, mystery_operator
-from ekfac import EKFAC
+from amortized_assimilation.models import MultiObs_KSConvEnAF2d
 
 def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, device, preconditioner = None):
     """ Training loop """
@@ -32,7 +29,6 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, device
         # Sample from prior
         pred_y1 = noiseless[0].unsqueeze(1).repeat(1, m, 1)
         pred_y1 = pred_y1 + torch.randn_like(pred_y1)  * noise
-#         print(pred_y1.shape)
         # Store everything
         preds_y, preds_y1, filts_y, filts_y1 = [], [], [], []
         preds_y_filt, preds_y1_filt = [], []
@@ -57,8 +53,6 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, device
             pred_y, pred_y1, ens, memory = model(x, pred_y1, memory, 
                                       obs_type = str(i_type % ntypes))
 
-            pred_y1 = torch.clamp(pred_y1, -4, 4)
-        
             # Build outputs
             preds_y += [pred_y]
             filts_y += [y]
@@ -66,6 +60,7 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, device
             next_type = np.random.randint(0, ntypes)
             preds_y1_filt += [obs_dict[str((next_type) % ntypes)](pred_y1)]
             preds_y1 += [pred_y1]
+            # Tracking training error
             with torch.no_grad():
                 if var_ra is None:
                     var_ra = torch.std(ens, 1).mean()
@@ -75,8 +70,6 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, device
             
         # Concat outputs
         pred_y_list = torch.stack(preds_y)
-        # print(pred_y_list.shape)
-        # print(noiseless.shape)
         # pred_y1_list = torch.stack(preds_y1)
         filtered_pred = torch.stack(preds_y_filt)
         filtered_pred_y1 = torch.stack(preds_y1_filt)
@@ -92,8 +85,6 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, device
         optimizer.step()
         scheduler.step()
 
-        # with torch.no_grad():
-        #     loss = torch.mean(torch.mean((pred_y_test.cpu() - base_data.squeeze())**2, dim = 1)**.5)
     with torch.no_grad():
         l = torch.mean(torch.mean((pred_y_list
                                       - noiseless)**2, dim = 2)**.5)

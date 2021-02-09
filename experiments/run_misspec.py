@@ -1,6 +1,4 @@
 import torch
-import torch.nn.functional as F
-import torch.nn as nn
 import torch.optim as optim
 import os
 import argparse
@@ -10,11 +8,9 @@ import obs_configs
 import datetime
 import csv
 
-from torchdiffeq import odeint
 from torch.utils.data import DataLoader
 from amortized_assimilation.data_utils import ChunkedTimeseries, L96, TimeStack, gen_data
 from amortized_assimilation.models import MultiObs_ConvEnAF
-from amortized_assimilation.operators import filter_obs, mystery_operator
 
 def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, device):
     """ Training loop """
@@ -55,7 +51,7 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, device
                 known_inds_tp1.append(i-1)
                 
             pvar, prior = torch.var_mean(pred_y1, dim = 1)
-            priors.append(prior)
+            priors.append(pred_y1)
             prior_vars.append(pvar)
             
 #             pred_y1 = pred_y1.detach()
@@ -68,8 +64,8 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, device
                                       obs_type = str(i_type % ntypes)
                                                )
             # Clamping into a reasonable range helps avoid divergence early in training
-            pred_y = torch.clamp(pred_y, -20, 20)
-            pred_y1 = torch.clamp(pred_y1, -20, 20)
+            # pred_y = torch.clamp(pred_y, -20, 20)
+            # pred_y1 = torch.clamp(pred_y1, -20, 20)
 
             # Build outputs
             ensembles += [ens]
@@ -95,12 +91,12 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, device
         priors_list = torch.stack(priors)
         pvar_list = torch.stack(prior_vars)
         ens_list = torch.stack(ensembles)
-
+        # print(ens_list.shape, pvar_list.shape)
         # Loss functions
         noisy_analysis_loss = torch.mean(torch.mean((filtered_pred[1:] - filt_y[1:])**2, dim = 2))
         forecast_loss = torch.mean(torch.mean(((filtered_pred_y1[known_inds_tp1].mean(dim = 2)
                                       - filt_y[known_inds_t])/2.5)**2, dim = 2))
-        prior_loss = torch.mean(((priors_list[1:].unsqueeze(2) - ens_list[1:]))**2/(pvar_list[1:] + 1e-7).unsqueeze(2)
+        prior_loss = torch.mean(((priors_list[1:] - ens_list[1:]))**2/(pvar_list[1:] + 1e-7).unsqueeze(2)
                                            + .5 * torch.log1p(pvar_list[1:] - 1 + 1e-7).unsqueeze(2))
         
         total_loss = forecast_loss + prior_loss
@@ -205,7 +201,7 @@ if __name__ == '__main__':
     print('Param Count', sum([np.prod(p.size()) for p in model_parameters]))
     model = model.to(device = device)
 
-    optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay = 0)
+    optimizer = optim.AdamW(model.parameters(), lr=5e-4, weight_decay = 0)
     dummy_sched = dummy()
     dummy_sched.step = lambda: None
 

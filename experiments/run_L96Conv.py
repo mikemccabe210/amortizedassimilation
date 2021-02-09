@@ -1,8 +1,5 @@
 import torch
-import torch.nn.functional as F
-import torch.nn as nn
 import torch.optim as optim
-from torch_oopt.optim import LBFGS
 import os
 import argparse
 import time
@@ -11,11 +8,9 @@ import numpy as np
 import obs_configs
 import csv
 
-from torchdiffeq import odeint
 from torch.utils.data import DataLoader
 from amortized_assimilation.data_utils import ChunkedTimeseries, L96, TimeStack, gen_data
-from amortized_assimilation.models import MultiObs_ConvEnAF, MultiObs_UEnAF
-from amortized_assimilation.operators import filter_obs, mystery_operator
+from amortized_assimilation.models import MultiObs_ConvEnAF
 
 def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indices, device, missing = False):
     """ Training loop """
@@ -175,17 +170,17 @@ if __name__ == '__main__':
     parser.add_argument('--train_steps', type=int, default=240_000)
     parser.add_argument('--step_size', type=float, default=.1)
     parser.add_argument('--batch_steps', type=int, default=40)
-    parser.add_argument('--batch_size', type=int, default=64)
+    parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--m', type=int, default=10)
     parser.add_argument('--n', type=int, default=40)
     parser.add_argument('--hidden_size', type=int, default=64)
-    parser.add_argument('--noise', type=float, default=2.5)
+    parser.add_argument('--noise', type=float, default=1)
     parser.add_argument('--epochs', type=int, default=500)
     parser.add_argument('--steps_valid', type=int, default=1000)
     parser.add_argument('--steps_test', type=int, default=10000)
     parser.add_argument('--check_disk', action='store_false')
-    # parser.add_argument('--obs_conf', type=str, default='every_4th_dim_partial_obs')
-    parser.add_argument('--obs_conf', type=str, default='full_obs')
+    parser.add_argument('--obs_conf', type=str, default='every_4th_dim_partial_obs')
+    # parser.add_argument('--obs_conf', type=str, default='full_obs')
     parser.add_argument('--do', type=float, default = .2)
     parser.add_argument('--device', type=str, default = 'gpu')
     parser.add_argument('--checkpoint', type=int, default=50)
@@ -220,13 +215,11 @@ if __name__ == '__main__':
     print('Param Count', sum([np.prod(p.size()) for p in model_parameters]))
     # model.load_state_dict(torch.load('models/2021-01-09_09-44lorenz96_partial_1.0std_64layers/convref_lorenz96_partial_0.6246_1.0std_500iters_64filt'))
     model = model.to(device = device)
-    # print(model)
     optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay = 0)
-    # optimizer = LBFGS(model.parameters(), lr=1e-3)
     dummy_sched = dummy()
     dummy_sched.step = lambda: None
     
-    data = ChunkedTimeseries(true_y, args.batch_steps, .5)
+    data = ChunkedTimeseries(true_y, args.batch_steps, .75)
     loader = DataLoader(data, batch_size=args.batch_size,
                         shuffle=True, num_workers=0, collate_fn=TimeStack())
     if args.obs_conf == 'full_obs':
