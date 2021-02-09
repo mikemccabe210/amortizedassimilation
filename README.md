@@ -1,8 +1,10 @@
 # Amortized Assimilation
 
-This respository contains a PyTorch implementation of the (WIP) paper *Learning to Assimilate in Chaotic Dynamical Systems*.
+This respository contains a PyTorch implementation of the (WIP) paper *Learning to Assimilate in Chaotic Dynamical
+Systems*. This work was initially presented at the *NeurIPS 2020 Workshop on Differentiable Vision, Graphics, and Physics in
+Machine Learning*.
 
-The accuracy of simulation-based forecasting in chaotic systems, such as those found in weather and climate settings, is
+Abstract: The accuracy of simulation-based forecasting in chaotic systems, such as those found in weather and climate settings, is
 heavily dependent on the accuracy of the initial condition estimates used in the forward simulation. Data assimilation 
 methods seek to infer these initial conditions by systematically combining both noisy observations and numerical models 
 of system dynamics to produce highly effective estimation schemes. In this work, we introduce a self-supervised 
@@ -17,8 +19,8 @@ methods across several standard benchmarks.
 
 ### Requirements
 
-This code can be fairly memory heavy as each experiment unrolls at least 40 assimilation steps (which from a memory 
-perspective is equivalent to a 40x deeper network). Current settings are 
+This code can be memory heavy as each experiment unrolls at least 40 assimilation steps (which from a memory 
+perspective is equivalent to a 40x deeper network plus whatever is needed for the simulation). Current settings are 
 optimized to max out memory usage on a GTX1070 GPU. The easiest ways to tune memory usage are network width and ensemble 
 size.
 
@@ -67,8 +69,13 @@ observation error(--noise, default 1.), ensemble size (--m, default 10), or
 network width (--hidden_size, default 250 for FF, 64 for conv). Custom observation configs can be created in the same 
 style as those found in obs_configs.py. 
 
+Parameters for traditional DA approaches were tuned via grid search over smaller sequences. The code for that search can
+be found under experiments/dapper_experiments and results were piped into text files also stored in that directory. 
+Those hyperparameters were then used for longer assimilation sequences. 
+
 ## Datasets
-Code is included for generating the Lorenz 96 and KS datasets. The Lorenz 2005 data was generated using the DAPPER library as there was no need to differentiate through them.
+Code is included for generating the Lorenz 96 and KS datasets. The Lorenz 2005 data was generated using the DAPPER 
+library as there was no need to differentiate through them. 
 ## References
 
 DAPPER: Raanes, P. N., & others. (2018). nansencenter/DAPPER: Version 0.8. https://doi.org/10.5281/zenodo.2029296
