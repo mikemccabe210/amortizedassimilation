@@ -42,6 +42,7 @@ class EnAF(nn.Module):
         self.n_h = hidden_size
         self.n_o = state_size    
         self.ode_func = ode_func
+
         
         # Linear components
         self.lin_net = nn.Sequential(nn.Linear(obs_size + state_size*2 + hidden_size, hidden_size),
@@ -235,13 +236,12 @@ class ConvEnAF2d(nn.Module):
         self.n_h = hidden_size
         self.n_o = state_size
         self.ode_func = ode_func
-
+        self.cov_band = 9 # should be odd
         # Linear components
-
         if missing:
-            n_in = 11
+            n_in = 10+self.cov_band
         else:
-            n_in = 10
+            n_in = 9+self.cov_band
 
 
         self.scale_up = nn.Sequential(nn.Conv2d(n_in, hidden_size, kernel_size=(1,5),
@@ -307,17 +307,25 @@ class ConvEnAF2d(nn.Module):
         rtol, atol = tols
         # Reshape Inputs
         state_var, state_mean = torch.var_mean(state, dim=1, keepdim=True)
-        state_var = state_var.repeat(1, self.m, 1)
-        state_var = state_var.reshape(-1, self.n_o)
+        cov = state - state_mean
+        cov = cov.transpose(-1, -2)/(self.m-1)@cov
+        # print([[(i+j-(self.cov_band//2))%self.n_o for j in range(self.cov_band)]
+        #                     for i in range(self.n_o)])
+        state_var = cov[:, [[(i+j-(self.cov_band//2))%self.n_o for j in range(self.cov_band)]
+                            for i in range(self.n_o)], torch.arange(self.n_o).unsqueeze(1)].transpose(-1, -2)
+        # print(cov[0][23], state_var[0,:,23])
+        # taco
+        state_var = state_var.unsqueeze(1).repeat(1, self.m, 1, 1)
+        state_var = state_var.reshape(-1, self.cov_band, self.n_o)
         state = state.reshape(-1, self.n_o)
         ddt = self.ode_func(0, state)
         observation = observation.reshape(-1, self.n_o)
         if mask is None:
-            c_in = torch.stack([observation, state, ddt, state_var], dim=1)
+            c_in = torch.stack([observation, state, ddt, ], dim=1)
         else:
             mask = mask.reshape(-1, self.n_o)
-            c_in = torch.stack([observation, state, ddt, state_var, mask], dim=1)
-        c_in = torch.cat([c_in, memory], dim=1)
+            c_in = torch.stack([observation, state, ddt,  mask], dim=1)
+        c_in = torch.cat([c_in, state_var, memory], dim=1)
 
         c_in = c_in.unsqueeze(2)
 
@@ -325,6 +333,171 @@ class ConvEnAF2d(nn.Module):
         c_in = self.scale_up(c_in)
         c_in = self.lin_net1(c_in) + c_in
         base = self.lin_net2(c_in).squeeze()
+        # Linear subnets
+        adj, x_mem, filt, mem_clear = base.split([1, 6, 1, 6], 1)
+        # Sigmoid subnets
+        # Autoregressive state estimate updates
+        memory = torch.sigmoid(mem_clear) * memory + x_mem  # * filt_mem
+        x = torch.sigmoid(filt.squeeze()) * state + adj.squeeze()
+        # Forward model
+        # TODO: This should definitely happen at the beginning of an assimilation
+        # cycle instead of the end but went here in an earlier version where it
+        # made more sense.
+        state = odeint(self.ode_func, x, interval, rtol=rtol, atol=atol,
+                       method='rk4', options={'step_size': .05})[-1]
+
+        # Debugging tool to track forward evals for adaptive integrators
+        self.ode_func.fe = 0
+
+        # Reshape outputs
+        ens = x.view(-1, self.m, self.n_o)
+        analysis = ens.mean(dim=1)
+        state = state.view(-1, self.m, self.n_o)
+
+        return analysis, state, ens, memory
+
+class MIMOConvEnAF2d(nn.Module):
+    """ EnAF using convolutional base networks
+
+    Used to assimilate a specific observation type. The ConvEnAF trains
+    a regression model to predict the next noisy observation using
+    the current noisy observation and an a priori specified set
+    of differentiable system dynamics.
+
+    Args
+    ----
+    obs_size : int
+        Size of observation vector
+    hidden_size : int
+        Size of memory and hidden state for all dense layers. Memory/hidden sized tied
+        implementation convenience, but do not have to be.
+    state_size : int
+        Size of full system state
+    ode_func : nn.Module
+        Differentiable numerical model used to push system state forward
+    m : int
+        Ensemble size
+    do : float
+        dropout rate
+    """
+
+    def __init__(self, obs_size, hidden_size, state_size, ode_func, m, do=.1, missing=False):
+        super(MIMOConvEnAF2d, self).__init__()
+        # Dims
+        self.m = m
+        self.n_i = obs_size
+        self.n_h = hidden_size
+        self.n_o = state_size
+        self.ode_func = ode_func
+        self.cov_band = 5 # should be odd
+        # Linear components
+        if missing:
+            n_in = 10+self.cov_band
+        else:
+            n_in = 9+self.cov_band
+
+
+        self.scale_up = nn.Sequential(nn.Conv2d(n_in, hidden_size, kernel_size=(1,5),
+                                                padding=(0, 2), padding_mode='circular',
+                                                groups=1),
+                                      nn.LayerNorm([hidden_size, 1, state_size], elementwise_affine=False),
+                                      nn.LeakyReLU()
+                                      )
+
+        self.lin_net1 = nn.Sequential( #nn.Dropout2d(do),
+                                       nn.Conv2d(hidden_size, hidden_size, kernel_size=(1,5),
+                                                padding=(0, 2), padding_mode='circular',
+                                                groups=1),
+                                      nn.LayerNorm([hidden_size, 1, state_size], elementwise_affine=False),
+                                      nn.LeakyReLU(),
+                                      # nn.Dropout2d(do),
+                                      nn.Conv2d(hidden_size, hidden_size, kernel_size=(1,5),
+                                                padding=(0, 2), dilation=1, padding_mode='circular',
+                                                groups=1),
+                                      nn.LayerNorm([hidden_size, 1, state_size], elementwise_affine=False),
+                                      nn.LeakyReLU())
+
+        self.lin_net2 = nn.Sequential(
+            # nn.Dropout2d(do),
+            nn.Conv2d(hidden_size, hidden_size, kernel_size=(1,5),
+                      padding=(0, 2), dilation=1, padding_mode='circular',
+                      groups=1),
+            nn.LayerNorm([hidden_size,1, state_size], elementwise_affine=False),
+            nn.LeakyReLU(),
+            # nn.Dropout2d(do),
+
+        )
+        self.batch_readout =  nn.Conv2d(hidden_size*m, 14*m, kernel_size=(1,5),
+                      padding=(0, 2), dilation=1, padding_mode='circular',
+                      groups=m)
+
+    def forward(self, observation, state, memory, mask=None, tols=(1e-3, 1e-5),
+                interval=torch.Tensor([0, .1])):
+        """Forward pass for the model
+
+        Args
+        ----
+        observation : torch.Tensor
+            Noisy observation vector generated from some function of true state
+        state : torch.Tensor
+            Current state estimate for system
+        memory_states : d
+            df
+        tols : tuple(float, float)
+            Relative and absolute tolerance for adaptive integrators
+        interval : torch.Tensor size = (2,)
+            Integration time for forward model.
+
+        Returns:
+            analysis : torch.Tensor
+                Analysis point estimate of current system state
+            state : torch.Tensor
+                Ensemble estimate pushed forward to next time step
+            ens : torch.Tensor
+                Current ensemble of state estimates
+            memory_states :
+                Memory dict
+        """
+        rtol, atol = tols
+        # Reshape Inputs
+        state_var, state_mean = torch.var_mean(state, dim=1, keepdim=True)
+        # with torch.no_grad():
+        cov = state - state_mean
+        cov = cov.transpose(-1, -2)/(self.m-1)@cov
+        # print([[(i+j-(self.cov_band//2))%self.n_o for j in range(self.cov_band)]
+        #                     for i in range(self.n_o)])
+        state_var = cov[:, [[(i+j-(self.cov_band//2))%self.n_o for j in range(self.cov_band)]
+                            for i in range(self.n_o)], torch.arange(self.n_o).unsqueeze(1)].transpose(-1, -2)
+        # print(cov[0][23], state_var[0,:,23])
+        # taco
+        state_var = state_var.unsqueeze(1).repeat(1, self.m, 1, 1)
+        state_var = state_var.reshape(-1, self.cov_band, self.n_o)
+        state = state.reshape(-1, self.n_o)
+        ddt = self.ode_func(0, state)
+        observation = observation.reshape(-1, self.n_o)
+        if mask is None:
+            c_in = torch.stack([observation, state, ddt, ], dim=1)
+        else:
+            mask = mask.reshape(-1, self.n_o)
+            c_in = torch.stack([observation, state, ddt,  mask], dim=1)
+        c_in = torch.cat([c_in, state_var, memory], dim=1)
+
+        c_in = c_in.unsqueeze(2)
+
+        # Linear subnets
+        c_in = self.scale_up(c_in)
+        c_in = self.lin_net1(c_in) + c_in
+
+        base = self.lin_net2(c_in)
+        # print('before', base.shape)
+        perm = torch.randperm(c_in.shape[0])
+        inv_perm = torch.argsort(perm)
+        # print(inv_perm.shape, inv_perm)
+        base = base[perm].view(-1, self.m*self.n_h, 1, self.n_o)
+        base = self.batch_readout(base)
+        # print('readout', base.shape)
+        base = base.view(-1, 14, 1, self.n_o).squeeze()[inv_perm]
+        # print('reshuffle', base.shape)
         # Linear subnets
         adj, x_mem, filt, mem_clear = base.split([1, 6, 1, 6], 1)
         # Sigmoid subnets

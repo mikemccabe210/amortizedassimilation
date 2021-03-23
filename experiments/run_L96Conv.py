@@ -34,7 +34,9 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
         preds_y_filt, preds_y1_filt = [], []
         known_inds_t = []
         known_inds_tp1 = []
-        
+        priors = []
+        prior_vars = []
+        ensembles = []
         # Init components
         memory = torch.zeros(pred_y1.shape[0] * m, 6, 40, device=device)
         next_type = np.random.randint(0, ntypes)
@@ -44,6 +46,9 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
             if known_h(next_type) and i > 0:
                 known_inds_t.append(i)
                 known_inds_tp1.append(i-1)
+            pvar, prior = torch.var_mean(pred_y1, dim = 1)
+            priors.append(pred_y1)
+            prior_vars.append(pvar)
             # Gen observations
             i_type = next_type 
             # Masking
@@ -69,6 +74,7 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
             pred_y1 = torch.clamp(pred_y1, -20, 20)
 
             # Build outputs
+            ensembles += [ens]
             preds_y += [pred_y]
             filts_y += [y]
             preds_y_filt += [obs_dict[str(i_type % ntypes)](pred_y)]
@@ -88,12 +94,37 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
         # filtered_pred = torch.stack(preds_y_filt)
         filtered_pred_y1 = torch.stack(preds_y1_filt)
         filt_y = torch.stack(filts_y)
+        priors_list = torch.stack(priors)
+        pvar_list = torch.stack(prior_vars)
+        ens_list = torch.stack(ensembles)
 
         # Loss functions
         # noisy_analysis_loss = torch.mean(torch.sum((filtered_pred[1:] - filt_y[1:])**2, dim = 2))
-        forecast_loss = torch.mean(torch.sum((filtered_pred_y1[known_inds_tp1].mean(dim = 2) 
+        # Mean
+        forecast_loss = torch.mean(torch.sum((filtered_pred_y1[known_inds_tp1].mean(dim = 2)
                                       - filt_y[known_inds_t])**2, dim = 2))
+        # Random entry
+        # print(filtered_pred_y1[known_inds_tp1].shape)
+        # print(filtered_pred_y1[known_inds_tp1][torch.arange(len(known_inds_tp1)).unsqueeze(1),
+        #                                                                        torch.arange(filtered_pred_y1.shape[1]).unsqueeze(0).repeat(len(known_inds_tp1), 1),
+        #                                                                        torch.randint(0, m, (len(known_inds_tp1),)).unsqueeze(1)].shape)
+        # print(filt_y[known_inds_t].shape)
+        # for_set = filtered_pred_y1[known_inds_tp1][:, :, :m//2]
+        # print(for_set.shape)
+        # filtered_pred_y1[known_inds_tp1][torch.arange(len(known_inds_tp1)).unsqueeze(1),
+        #                                  torch.arange(filtered_pred_y1.shape[1]).unsqueeze(0).repeat(
+        #                                      len(known_inds_tp1), 1),
+        #                                  torch.randint(0, m, (len(known_inds_tp1), m // 2))]
+        # forecast_loss = torch.mean(torch.sum((for_set.mean(dim = 2)
+        #                               - filt_y[known_inds_t])**2, dim = 2))
         forecast_loss.backward()
+
+        # forecast_loss = torch.mean(torch.mean(((filtered_pred_y1[known_inds_tp1].mean(dim = 2)
+        #                               - filt_y[known_inds_t])/noise)**2, dim = 2))
+        # prior_loss = torch.mean(((priors_list[1:] - ens_list[1:]))**2/(pvar_list[1:] + 1e-7).unsqueeze(2)
+        #                                    + .5 * torch.log1p(pvar_list[1:] - 1 + 1e-7).unsqueeze(2))
+        # total_loss = forecast_loss + prior_loss
+        # total_loss.backward()
         optimizer.step()
         scheduler.step()
     with torch.no_grad():
@@ -170,17 +201,17 @@ if __name__ == '__main__':
     parser.add_argument('--train_steps', type=int, default=240_000)
     parser.add_argument('--step_size', type=float, default=.1)
     parser.add_argument('--batch_steps', type=int, default=40)
-    parser.add_argument('--batch_size', type=int, default=32)
-    parser.add_argument('--m', type=int, default=10)
+    parser.add_argument('--batch_size', type=int, default=4)
+    parser.add_argument('--m', type=int, default=20)
     parser.add_argument('--n', type=int, default=40)
     parser.add_argument('--hidden_size', type=int, default=64)
-    parser.add_argument('--noise', type=float, default=1)
+    parser.add_argument('--noise', type=float, default=1.)
     parser.add_argument('--epochs', type=int, default=500)
     parser.add_argument('--steps_valid', type=int, default=1000)
     parser.add_argument('--steps_test', type=int, default=10000)
     parser.add_argument('--check_disk', action='store_false')
-    parser.add_argument('--obs_conf', type=str, default='every_4th_dim_partial_obs')
-    # parser.add_argument('--obs_conf', type=str, default='full_obs')
+    # parser.add_argument('--obs_conf', type=str, default='every_4th_dim_partial_obs')
+    parser.add_argument('--obs_conf', type=str, default='full_obs')
     parser.add_argument('--do', type=float, default = .2)
     parser.add_argument('--device', type=str, default = 'gpu')
     parser.add_argument('--checkpoint', type=int, default=50)
@@ -200,7 +231,7 @@ if __name__ == '__main__':
     t = torch.arange(0, args.train_steps*args.step_size, args.step_size)
     true_y, true_y_valid, true_y_test = gen_data('lorenz96', t, args.steps_test,
                                                  args.steps_valid, check_disk=args.check_disk)
-    print(true_y.max(dim = 0))
+    # print(true_y.max(dim = 0))
     
     # Set up obs operators - uses full obs for input types since only one network is used
     input_types, obs_dict, indices, known_h = obs_configs.lorenz_configs[args.obs_conf]
@@ -215,7 +246,7 @@ if __name__ == '__main__':
     print('Param Count', sum([np.prod(p.size()) for p in model_parameters]))
     # model.load_state_dict(torch.load('models/2021-01-09_09-44lorenz96_partial_1.0std_64layers/convref_lorenz96_partial_0.6246_1.0std_500iters_64filt'))
     model = model.to(device = device)
-    optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay = 0)
+    optimizer = optim.AdamW(model.parameters(), lr=8e-4, weight_decay = 0)
     dummy_sched = dummy()
     dummy_sched.step = lambda: None
     
@@ -228,7 +259,8 @@ if __name__ == '__main__':
         otype = 'partial'
     folder_name = ("models/" + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')
                    + "%s_%s_%.1fstd_%dlayers" % (args.dynamics, otype, args.noise, args.hidden_size))
-    os.makedirs(folder_name)
+    if not os.path.isdir(folder_name):
+        os.makedirs(folder_name)
     start_time = time.time()
     # Training
     itr = 0
@@ -237,8 +269,8 @@ if __name__ == '__main__':
     for itr in range(1, args.epochs + 1):
         if itr <= 50:
             optimizer.param_groups[0]['lr'] *= 1.03
-        else:
-            optimizer.param_groups[0]['lr'] *= .993
+        elif (itr+1) % 300 == 0:
+            optimizer.param_groups[0]['lr'] /= 2
         tloss = train(itr, loader, args.noise, args.m, model, optimizer, dummy_sched, obs_dict, indices, device, missing)
         loss = test(itr, start_time, true_y_valid, args.noise, args.m, model, obs_dict, indices, device, missing)
         train_losses.append(tloss.item())
