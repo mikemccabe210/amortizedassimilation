@@ -43,6 +43,7 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
         next_type = np.random.randint(0, ntypes)
         # Iterate over timesteps in batch
         for i, xi in enumerate(batch_y0):
+            pred_y1 = pred_y1.detach()
             # Check if observation operator is known
             if known_h(next_type) and i > 0:
                 known_inds_t.append(i)
@@ -56,7 +57,7 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
             if missing:
                 x = pred_y1.detach()[:, torch.randperm(m), :] 
                 x[:, :, indices[str(i_type % ntypes)]] = (obs_dict[str(i_type % ntypes)](xi)).unsqueeze(1).repeat(1, m, 1)
-                x = x + torch.randn_like(x)*noise
+            
                 mask = torch.ones(x.shape[0], m,  40, device = device) * -.1
                 mask[:, :, indices[str(i_type % ntypes)]] = .1
                 obs_type = '0'
@@ -72,7 +73,7 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
                                                )
             # Clamping into a reasonable range helps avoid divergence early in training
             pred_y = torch.clamp(pred_y, -20, 20)
-            pred_y1 = torch.clamp(pred_y1, -20, 20)
+            pred_y1 = torch.clamp(pred_y1, -20, 20).detach()
 
             # Build outputs
             ensembles += [ens]
@@ -92,7 +93,7 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
         # Concat outputs
         pred_y_list = torch.stack(preds_y)
         # pred_y1_list = torch.stack(preds_y1)
-        # filtered_pred = torch.stack(preds_y_filt)
+        filtered_pred = torch.stack(preds_y_filt)
         filtered_pred_y1 = torch.stack(preds_y1_filt)
         filt_y = torch.stack(filts_y)
         priors_list = torch.stack(priors)
@@ -100,10 +101,10 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
         ens_list = torch.stack(ensembles)
 
         # Loss functions
-        # noisy_analysis_loss = torch.mean(torch.sum((filtered_pred[1:] - filt_y[1:])**2, dim = 2))
+        noisy_analysis_loss = torch.mean(torch.sum((filtered_pred[1:] - filt_y[1:])**2, dim = 2))
         # Mean
-        forecast_loss = torch.mean(torch.sum((filtered_pred_y1[known_inds_tp1].mean(dim = 2)
-                                      - filt_y[known_inds_t])**2, dim = 2))
+        # forecast_loss = torch.mean(torch.sum((filtered_pred_y1[known_inds_tp1].mean(dim = 2)
+        #                               - filt_y[known_inds_t])**2, dim = 2))
         # Random entry
         # print(filtered_pred_y1[known_inds_tp1].shape)
         # print(filtered_pred_y1[known_inds_tp1][torch.arange(len(known_inds_tp1)).unsqueeze(1),
@@ -127,7 +128,7 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
         # print(pvar_list.shape)
         prior_loss = torch.mean((priors_list[1:] - pred_y_list[1:])**2/(pvar_list[1:] + 1e-7)
                                            + .5 * torch.log1p(pvar_list[1:] - 1 + 1e-7))
-        total_loss = forecast_loss + prior_loss
+        total_loss = noisy_analysis_loss #+ prior_loss
         total_loss.backward()
         optimizer.step()
         scheduler.step()
@@ -146,7 +147,7 @@ def test(epoch, start_time, base_data, noise, m, model, obs_dict, indices, devic
         state = state.to(device = device)
         noisy_test = base_data + torch.randn_like(base_data) * noise
         noisy_test = noisy_test.to(device = device)
-        pred_y_test, _, _, ens = assimilate_unseen_obs_ens(model, noise, noisy_test, state, m,
+        pred_y_test, _, _, ens = assimilate_unseen_obs_ens(model, noisy_test, state, m,
                                                            obs_dict, indices, device, missing)
         loss = torch.mean(torch.mean((pred_y_test.cpu() - base_data.squeeze())**2, dim = 1)**.5)
         n = ens.shape[0]
@@ -163,7 +164,7 @@ def test(epoch, start_time, base_data, noise, m, model, obs_dict, indices, devic
         # print('Iter {:04d} | Total Loss {:.6f} | Time {:.1f}'.format(epoch, loss.item(), time.time() - start_time))
         return loss
     
-def assimilate_unseen_obs_ens(model, noise, data, state, m, obs_dict, indices, device, missing):
+def assimilate_unseen_obs_ens(model, data, state, m, obs_dict, indices, device, missing):
     """ Executes online assimilation"""
     preds = []
     states = []
@@ -177,7 +178,6 @@ def assimilate_unseen_obs_ens(model, noise, data, state, m, obs_dict, indices, d
         if missing:
             obs = state.detach()[:, torch.randperm(m), :] 
             obs[:, :, indices[str(i %  len(obs_dict))]] = (obs_dict[str(i % len(obs_dict))](obsi)).unsqueeze(1).repeat(1, m, 1)
-            obs += torch.randn_like(obs)*noise
             mask = torch.ones(obs.shape[0], m,  40, device = device) * -.1
             mask[:, :, indices[str(i % len(obs_dict))]] = .1
             obs_type = '0'
@@ -228,7 +228,7 @@ if __name__ == '__main__':
         device = torch.device('cpu')
 
     if args.obs_conf == 'every_4th_dim_partial_obs':
-        missing = True
+        missing = True;''
     else:
         missing = False
 
@@ -241,18 +241,15 @@ if __name__ == '__main__':
     # Set up obs operators - uses full obs for input types since only one network is used
     input_types, obs_dict, indices, known_h = obs_configs.lorenz_configs[args.obs_conf]
     input_types, _, _, known_h = obs_configs.lorenz_configs['full_obs']
-    interval = torch.tensor([0, args.step_size], device=device)
-    int_kwargs = {'method': 'rk4', 'options': {'step_size': .05}}
 
     ntypes = len(obs_dict)
     # Set up model
     model = MultiObs_ConvEnAF(args.n, args.hidden_size, input_types=input_types,
-                             m = args.m, missing = missing, do = args.do, int_kwargs=int_kwargs,
-                              interval=interval)
+                             m = args.m, missing = missing, do = args.do)
     # Get param count
     model_parameters = filter(lambda p: p.requires_grad, model.parameters())
     print('Param Count', sum([np.prod(p.size()) for p in model_parameters]))
-    # model.load_state_dict(torch.load('models/2021-05-21_09-00lorenz96_partial_1.0std_64layers/final_convref_lorenz96_partial_0.6326_1.0std_500iters_64filt'))
+    # model.load_state_dict(torch.load('models/2021-01-09_09-44lorenz96_partial_1.0std_64layers/convref_lorenz96_partial_0.6246_1.0std_500iters_64filt'))
     model = model.to(device = device)
     optimizer = optim.AdamW(model.parameters(), lr=8e-4, weight_decay = 0)
     # optimizer = topt.Apollo(model.parameters(), lr=5e-3, init_lr=1e-5, warmup=2000)
@@ -268,7 +265,7 @@ if __name__ == '__main__':
     else:
         otype = 'partial'
     folder_name = ("models/" + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')
-                   + "%s_%s_%.1fstd_%dlayers" % (args.dynamics, otype, args.noise, args.hidden_size))
+                   + "%s_%s_%.1fstd_%dlayers_ablate" % (args.dynamics, otype, args.noise, args.hidden_size))
     if not os.path.isdir(folder_name):
         os.makedirs(folder_name)
     start_time = time.time()
@@ -277,14 +274,10 @@ if __name__ == '__main__':
     train_losses = []
     test_losses = []
     for itr in range(1, args.epochs + 1):
-        # torch.manual_seed(0)
         if itr <= 50:
             optimizer.param_groups[0]['lr'] *= 1.03
         if (itr+1) % 200 == 0:
             optimizer.param_groups[0]['lr'] /= 2
-        # model.input_mods['0'].inflate += .01
-        # if itr < 400:
-        #     continue
         tloss = train(itr, loader, args.noise, args.m, model, optimizer, dummy_sched, obs_dict, indices, device, missing)
         loss = test(itr, start_time, true_y_valid, args.noise, args.m, model, obs_dict, indices, device, missing)
         train_losses.append(tloss.item())

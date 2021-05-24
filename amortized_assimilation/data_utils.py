@@ -110,6 +110,7 @@ def gen_data(dataset, t, steps_test, steps_valid, step = None, check_disk = True
             if check_disk and os.path.exists('data/%s/true_y_%.3fstep.npy' % (dataset, rstep)):
                 true_y = torch.Tensor(np.load('data/%s/true_y_%.3fstep.npy' % (dataset, rstep)))         
                 true_y0_test = true_y[-1].unsqueeze(0)
+                # print('EEEEE', true_y0_test.shape)
                 true_y = true_y[:-1].unsqueeze(1)
                 true_y_test = custom_int(true_y0_test, etd_rk4_wrapper(), steps_test + steps_valid).unsqueeze(1)
             else:
@@ -173,8 +174,8 @@ def etd_rk4_wrapper(device = None, dt=0.5,DL=32,Nx=128):
     L = kk**2 - kk**4 # Linear operator for K-S eqn: F[ - u_xx - u_xxxx]
 
     # Precompute ETDRK4 scalar quantities
-    E  = torch.Tensor(np.exp(h*L)).unsqueeze(1).to(device)    # Integrating factor, eval at dt
-    E2 = torch.Tensor(np.exp(h*L/2)).unsqueeze(1).to(device)    # Integrating factor, eval at dt/2
+    E  = torch.Tensor(np.exp(h*L)).unsqueeze(0).to(device)    # Integrating factor, eval at dt
+    E2 = torch.Tensor(np.exp(h*L/2)).unsqueeze(0).to(device)    # Integrating factor, eval at dt/2
     
     # Roots of unity are used to discretize a circular countour...
     nRoots = 16
@@ -183,41 +184,64 @@ def etd_rk4_wrapper(device = None, dt=0.5,DL=32,Nx=128):
     # g(CL).mean(axis=-1) ~= g(L), whose computation is more stable.
     CL = h * L[:,None] + roots # Contour for (each element of) L
     # E * exact_integral of integrating factor:
-    Q  = torch.Tensor(h * (          (np.exp(CL/2)-1)         / CL    ).mean(axis=-1).real).unsqueeze(1).to(device)
+    Q  = torch.Tensor(h * ( (np.exp(CL/2)-1)    / CL    ).mean(axis=-1).real).unsqueeze(0).to(device)
     # RK4 coefficients (modified by Cox-Matthews):
-    f1 = torch.Tensor(h * ( (-4-CL+np.exp(CL)*(4-3*CL+CL**2)) / CL**3 ).mean(axis=-1).real).unsqueeze(1).to(device)
-    f2 = torch.Tensor(h * (   (2+CL+np.exp(CL)*(-2+CL))       / CL**3 ).mean(axis=-1).real).unsqueeze(1).to(device)
-    f3 = torch.Tensor(h * ( (-4-3*CL-CL**2+np.exp(CL)*(4-CL)) / CL**3 ).mean(axis=-1).real).unsqueeze(1).to(device)
+    f1 = torch.Tensor(h * ( (-4-CL+np.exp(CL)*(4-3*CL+CL**2)) / CL**3 ).mean(axis=-1).real).unsqueeze(0).to(device)
+    f2 = torch.Tensor(h * (   (2+CL+np.exp(CL)*(-2+CL))       / CL**3 ).mean(axis=-1).real).unsqueeze(0).to(device)
+    f3 = torch.Tensor(h * ( (-4-3*CL-CL**2+np.exp(CL)*(4-CL)) / CL**3 ).mean(axis=-1).real).unsqueeze(0).to(device)
 
-    D = torch.Tensor(kk).to(device) # Differentiation to compute:  F[ u_x ]
+    D = 1j*torch.Tensor(kk).to(device) # Differentiation to compute:  F[ u_x ]
     
+    # def NL(v, verb = False):
+    #     v_mult = torch.rfft(torch.irfft(v, 1, signal_sizes =( Nx, )) ** 2, 1 )
+    #     # v_mult = torch.rfft(torch.irfft(v, 1, signal_sizes=(Nx,)) ** 2, 1)
+    #     vr, vi = torch.split(v_mult, 1, dim = -1)
+    #     vr, vi = vr.squeeze(-1), vi.squeeze(-1)
+    #     # print(vr.device, D.device)
+    #     vr *= D
+    #     vi *= -D
+    #     v = -.5 * torch.stack([vi, vr], -1)
+    #     return v
+
     def NL(v, verb = False):
-        v_mult = torch.rfft(torch.irfft(v, 1, signal_sizes =( Nx, )) ** 2, 1 )
-        vr, vi = torch.split(v_mult, 1, dim = -1)
-        vr, vi = vr.squeeze(-1), vi.squeeze(-1)
-#         if verb:
-#             print(vr.device, D.device)
-        vr *= D
-        vi *= -D
-        v = -.5 * torch.stack([vi, vr], -1)
-        return v
+        return -.5 * D * torch.fft.rfft(torch.fft.irfft(v, dim=-1)**2, dim=-1)
         
     def inner(v, t, dt, verb = False):
-        v = torch.rfft(v, 1)
+        # print('vprep', v.shape)
+        # print(v)
+        v = torch.fft.rfft(v, dim=-1)
+        # print('vafter', v.shape)
+        # print(v)
         N1  = NL(v, verb)
+        # print('n1', N1.shape)
 #         print(E2.shape, v.shape, Q.shape, N1.shape)
         v1  = E2*v  + Q*N1
+        # print('v1', v1.shape, E2.shape, Q.shape)
         
         N2a = NL(v1)
+        # print('n2a', N2a.shape)
         v2a = E2*v  + Q*N2a
         
-        N2b = NL(v2a) 
+        N2b = NL(v2a)
+        # print('N2b', N2b.shape)
         v2b = E2*v1 + Q*(2*N2b-N1)
         
         N3  = NL(v2b)
+        # print('N3', N3.shape)
         v   = E*v  + N1*f1 + 2*(N2a+N2b)*f2 + N3*f3
-        return torch.irfft(v, 1, signal_sizes =( Nx, ))
+        # print('last', v.shape)
+        return torch.fft.irfft(v, dim=-1)
     return inner
+
+def odeint_etd_wrapper(device = None, dt=0.5,DL=32,Nx=128):
+    """ Kind of wasteful, but reduces code duplication elsewhere """
+    ode_func = etd_rk4_wrapper(device, dt, DL, Nx)
+    def inner(t, x0):
+        x1 = ode_func(x0, dt, dt)
+        x1 = ode_func(x1, dt, dt)
+        return x1-x0
+    return inner
+
 
 # This basically is just a hack for KS training
 def custom_int(x0, int_function, steps, dt = .5):
@@ -225,6 +249,7 @@ def custom_int(x0, int_function, steps, dt = .5):
     x = x0
     for i in range(steps):
         x = int_function(x, None, dt)
+        # print('pt2', x.shape)
         x = int_function(x, None, dt)
         out.append(x)
     return torch.cat(out, 0)
