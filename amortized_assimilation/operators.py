@@ -3,7 +3,9 @@ import torch
 def filter_obs(filt):
     """ Observes the specified coordinates """
     def inner(x):
-        if len(x.shape) == 3:
+        if len(x.shape) == 4:
+            return x[:, :, :, filt]
+        elif len(x.shape) == 3:
             return x[:, :, filt]
         else:
             return x[:, filt]

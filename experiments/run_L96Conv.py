@@ -56,7 +56,7 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
             if missing:
                 x = pred_y1.detach()[:, torch.randperm(m), :] 
                 x[:, :, indices[str(i_type % ntypes)]] = (obs_dict[str(i_type % ntypes)](xi)).unsqueeze(1).repeat(1, m, 1)
-                x = x + torch.randn_like(x)*noise
+                # x = x + torch.randn_like(x)*noise
                 mask = torch.ones(x.shape[0], m,  40, device = device) * -.1
                 mask[:, :, indices[str(i_type % ntypes)]] = .1
                 obs_type = '0'
@@ -177,7 +177,7 @@ def assimilate_unseen_obs_ens(model, noise, data, state, m, obs_dict, indices, d
         if missing:
             obs = state.detach()[:, torch.randperm(m), :] 
             obs[:, :, indices[str(i %  len(obs_dict))]] = (obs_dict[str(i % len(obs_dict))](obsi)).unsqueeze(1).repeat(1, m, 1)
-            obs += torch.randn_like(obs)*noise
+            # obs += torch.randn_like(obs)*noise
             mask = torch.ones(obs.shape[0], m,  40, device = device) * -.1
             mask[:, :, indices[str(i % len(obs_dict))]] = .1
             obs_type = '0'

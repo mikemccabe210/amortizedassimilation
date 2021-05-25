@@ -236,7 +236,7 @@ class ConvEnAF2d(nn.Module):
     """
 
     def __init__(self, obs_size, hidden_size, state_size, ode_func, m, do=.1,
-                 mem_channels=6, missing=False, inflate=1.0, interval=torch.Tensor([0, .1]), int_kwargs={}):
+                 mem_channels=6, in_channels = 1, missing=False, inflate=1.0, interval=torch.Tensor([0, .1]), int_kwargs={}):
         super(ConvEnAF2d, self).__init__()
         # Dims
         self.m = m
@@ -244,51 +244,57 @@ class ConvEnAF2d(nn.Module):
         self.n_h = hidden_size
         self.n_o = state_size
         self.ode_func = ode_func
-        self.cov_band = 5 # should be odd
+        self.cov_band = 3 # should be odd
         self.inflate = inflate
         self.mem_channels = mem_channels
+        self.in_channels = in_channels
         self.int_kwargs = int_kwargs
         self.interval = interval
-        # Linear components
         if missing:
-            n_in = 4+mem_channels+self.cov_band
+            n_in = 3*in_channels + 1 + mem_channels + self.cov_band*in_channels # state, d/dt, obs, mask, mem, cov
         else:
-            n_in = 3+mem_channels+self.cov_band
+            n_in = 3*in_channels + mem_channels + self.cov_band*in_channels # state, d/dt, obs, mem, cov
 
-
-        self.scale_up = (nn.Sequential(
-                                        nn.utils.spectral_norm(nn.Conv2d(n_in, hidden_size, kernel_size=(1,5),
+        self.scale_up = nn.Sequential(
+                                        nn.Conv2d(n_in, hidden_size, kernel_size=(1,5),
                                                 padding=(0, 2), padding_mode='circular',
-                                                groups=1)),
+                                                groups=1),
                                         nn.LayerNorm([hidden_size, 1, state_size], elementwise_affine=False),
                                       # nn.LeakyReLU()
-                                      ))
+                                      )
 
-        self.lin_net1 = (nn.Sequential(
-                                        # nn.Dropout2d(do),
-                                       nn.utils.spectral_norm(nn.Conv2d(hidden_size, hidden_size, kernel_size=(1,5),
+        self.lin_net1 = nn.Sequential(
+                                        nn.Dropout2d(do),
+                                       nn.Conv2d(hidden_size, hidden_size, kernel_size=(1,5),
                                                 padding=(0, 2), padding_mode='circular',
-                                                groups=1)),
+                                                groups=1),
                                       nn.LayerNorm([hidden_size, 1, state_size], elementwise_affine=False),
                                       nn.LeakyReLU(),
-                                      # nn.Dropout2d(do),
-                                      nn.utils.spectral_norm(nn.Conv2d(hidden_size, hidden_size, kernel_size=(1,5),
+                                      nn.Dropout2d(do),
+                                      nn.Conv2d(hidden_size, hidden_size, kernel_size=(1,5),
                                                 padding=(0, 2), dilation=1, padding_mode='circular',
-                                                groups=1)),
+                                                groups=1),
                                       nn.LayerNorm([hidden_size, 1, state_size], elementwise_affine=False),
-                                      nn.LeakyReLU()))
+                                      nn.LeakyReLU())
 
-        self.lin_net2 = (nn.Sequential(
-            # nn.Dropout2d(do),
-            nn.utils.spectral_norm(nn.Conv2d(hidden_size, hidden_size, kernel_size=(1,5),
+        self.lin_net2 = nn.Sequential(
+            nn.Dropout2d(do),
+            nn.Conv2d(hidden_size, hidden_size, kernel_size=(1,5),
                       padding=(0, 2), dilation=1, padding_mode='circular',
-                      groups=1)),
+                      groups=1),
             nn.LayerNorm([hidden_size,1, state_size], elementwise_affine=False),
-            nn.LeakyReLU())
-        )
+            nn.LeakyReLU(),
+                nn.Dropout2d(do),
+            nn.Conv2d(hidden_size, hidden_size, kernel_size=(1, 5),
+                      padding=(0, 2), dilation=1, padding_mode='circular',
+                      groups=1),
+            nn.LayerNorm([hidden_size, 1, state_size], elementwise_affine=False),
+            nn.LeakyReLU()
+            )
+
         self.readout = nn.Sequential(
-            # nn.Dropout2d(do) ,
-            nn.Conv2d(hidden_size, (1+self.mem_channels)*2, kernel_size=(1,5),
+            nn.Dropout2d(do) ,
+            nn.Conv2d(hidden_size, (self.in_channels+self.mem_channels)*2, kernel_size=(1,5),
                       padding=(0, 2), dilation=1, padding_mode='circular',
                       groups=1))
 
@@ -325,25 +331,41 @@ class ConvEnAF2d(nn.Module):
         if interval is None:
             interval = self.interval
         # Reshape Inputs
+        # print('state', state.shape, observation.shape)
         state_var, state_mean = torch.var_mean(state, dim=1, keepdim=True)
         # TODO Figure out a good way to implement covariance calc
-        cov = state - state_mean
+        cov = state.reshape(-1, self.m, self.in_channels*self.n_o)
+        # print(cov.shape, state_mean.shape)
+        cov = cov - state_mean.reshape(-1, 1, self.in_channels*self.n_o)
+        # print(cov.shape)
         cov = 1/(self.m-1) * cov.transpose(-1, -2)@cov
-        state_var = cov[:, [[(i+j-(self.cov_band//2))%self.n_o for j in range(self.cov_band)]
-                            for i in range(self.n_o)], torch.arange(self.n_o).unsqueeze(1)].transpose(-1, -2)
+        # print('cov', cov.shape)
+        # Figure out correct indices based on cov band and num channels
+        extr_inds = [[(i+j-(self.cov_band//2))%self.n_o for j in range(self.cov_band)]
+                            for i in range(self.n_o)]
+        for k in range(1, self.in_channels):
+            for i, _ in enumerate(extr_inds):
+                extr_inds[i] = extr_inds[i]+[k*self.n_o + val for val in extr_inds[i]]
+        state_var = cov[:, extr_inds, torch.arange(self.n_o).unsqueeze(1)].transpose(-1, -2)
+        # print(state_var.shape)
         # Avoid errors if cov is 0 on ablation study
         state_var[~torch.isfinite(state_var)] = 0.0
         state_var = state_var.unsqueeze(1).repeat(1, self.m, 1, 1)
-        state_var = state_var.reshape(-1, self.cov_band, self.n_o)
-        state = state.reshape(-1, self.n_o)
+        state_var = state_var.reshape(-1, self.cov_band*self.in_channels, self.n_o)
+        state = state.reshape(-1, self.in_channels, self.n_o).squeeze()
         ddt = self.ode_func(0, state)
-        observation = observation.reshape(-1, self.n_o)
+        if len(state.shape) == 2:
+            state = state.unsqueeze(1)
+            observation = observation.unsqueeze(1)
+            ddt = ddt.unsqueeze(1)
+        observation = observation.reshape(-1, self.in_channels, self.n_o).squeeze()
         if mask is None:
-            c_in = torch.stack([observation, state, ddt, ], dim=1)
+            c_in = observation #torch.stack([observation , ddt, ], dim=1)
         else:
-            mask = mask.reshape(-1, self.n_o)
-            c_in = torch.stack([observation, state, ddt,  mask], dim=1)
-        c_in = torch.cat([c_in, state_var, memory], dim=1)
+            mask = mask.reshape(-1, self.n_o).unsqueeze(1)
+            # print('mask', mask.shape, observation.shape)
+            c_in = torch.cat([ observation,  mask], dim=1)
+        c_in = torch.cat([state, c_in, ddt, state_var, memory], dim=1)
 
         c_in = c_in.unsqueeze(2)
 
@@ -353,7 +375,8 @@ class ConvEnAF2d(nn.Module):
         base = self.lin_net2(c_in) + c_in
         base = self.readout(base).squeeze()
         # Split gate
-        adj, x_mem, filt, mem_clear = base.split([1, self.mem_channels, 1, self.mem_channels], 1)
+        adj, x_mem, filt, mem_clear = base.split([self.in_channels, self.mem_channels,
+                                                  self.in_channels, self.mem_channels], 1)
         # Autoregressive state estimate updates
         memory = torch.sigmoid(mem_clear) * memory + x_mem  # * filt_mem
         x = torch.sigmoid(filt.squeeze()) * state + adj.squeeze()
@@ -369,15 +392,18 @@ class ConvEnAF2d(nn.Module):
         # cycle instead of the end but went here in an earlier version where it
         # made more sense.
         # print(interval, int_kwargs)
+        # print(x.shape)
         state = odeint(self.ode_func, x, interval, **int_kwargs)[-1]
+        # print(state.shape)
 
         # Debugging tool to track forward evals for adaptive integrators
         self.ode_func.fe = 0
 
         # Reshape outputs
-        ens = x.view(-1, self.m, self.n_o)
+        ens = x.view(-1, self.m, self.in_channels, self.n_o).squeeze()
         analysis = ens.mean(dim=1)
-        state = state.view(-1, self.m, self.n_o)
+        state = state.view(-1, self.m, self.in_channels, self.n_o).squeeze()
+        # print('end', ens.shape, state.shape)
 
         return analysis, state, ens, memory
 
@@ -569,7 +595,7 @@ class MultiObs_ConvEnAF(nn.Module):
 
     def __init__(self, state_size, hidden_size, input_types={},
                  ode_func=L96(), m=20, do=.1, missing=False, mem_channels=6,
-                 int_kwargs={}, interval=torch.tensor([0, .1])):
+                 in_channels = 1, int_kwargs={}, interval=torch.tensor([0, .1])):
         super(MultiObs_ConvEnAF, self).__init__()
         self.missing = missing
         # Use input_types to create appropriately sized sub-networks
@@ -578,7 +604,7 @@ class MultiObs_ConvEnAF(nn.Module):
             for k, v in input_types.items():
                 label = k
                 subnet = ConvEnAF2d(v, hidden_size, state_size, ode_func, m=m, missing=missing, mem_channels=mem_channels,
-                                    do=do, int_kwargs=int_kwargs, interval=interval)
+                                    do=do, int_kwargs=int_kwargs, interval=interval, in_channels=in_channels)
                 in_dict[label] = subnet
             self.input_mods = nn.ModuleDict(in_dict)
         # This path is almost certainly broken by now

@@ -18,6 +18,37 @@ class L96(nn.Module):
         x_p1 = torch.roll(x, 1, -1)
         return (x_p1 - x_m2) * x_m1 - x + F * torch.ones_like(x)
 
+class VL20(nn.Module):
+    """Modeled after dapper implementation"""
+    def __init__(self, nX=36, F=10, G=10, alpha=1, gamma=1):
+        super(VL20, self).__init__()
+        self.fe = 0
+        self.nX = nX
+        self.F = F
+        self.G = G
+        self.alpha = alpha
+        self.gamma = gamma
+    def forward(self, t, x):
+        self.fe += 1
+        out = torch.zeros_like(x)
+        # print( torch.split(x, self.nX, -1))
+        X, theta = x[:, 0, :], x[:, 1, :]
+
+        # Velocities
+        out[:, 0, :] = (torch.roll(X, 1, -1) - torch.roll(X, -2, -1))*torch.roll(X, -1, -1)
+        out[:, 0, :] -= self.gamma*X
+        out[:, 0, :] += self.F - self.alpha * theta
+        # Temperatures
+        out[:, 1, :] = torch.roll(X, 1, -1)*torch.roll(theta, 2, -1) - \
+                           torch.roll(X, -1, -1) * torch.roll(theta, -2, -1)
+        out[:, 1, :] -= self.gamma*theta
+        out[:, 1, :] += self.alpha*X + self.G
+        # x_m2 = torch.roll(x, -2, -1)
+        # x_m1 = torch.roll(x, -1, -1)
+        # x_p1 = torch.roll(x, 1, -1)
+        return out
+
+
 class L63(nn.Module):
     def __init__(self):
         super(L63, self).__init__()
@@ -74,7 +105,24 @@ def gen_data(dataset, t, steps_test, steps_valid, step = None, check_disk = True
                 true_y0_test = true_y[-1]
                 true_y = true_y[:-1]
                 true_y_test = odeint(L96(), true_y0_test, t[:steps_burn + steps_test + steps_valid],
-                            method='rk4', options = {'step_size': step} ) 
+                            method='rk4', options = {'step_size': step} )
+    elif dataset == 'vl20':
+        with torch.no_grad():
+            if check_disk and os.path.exists('data/%s/true_y_%.3fstep.npy' % (dataset, rstep)):
+                true_y = torch.Tensor(np.load('data/%s/true_y_%.3fstep.npy' % (dataset, rstep)))
+                true_y0_test = true_y[-1]
+                true_y = true_y[:-1]
+                true_y_test = odeint(VL20(), true_y0_test, t[:steps_burn + steps_valid + steps_test],
+                                     method='rk4', options={'step_size': step})
+            else:
+                true_y0 = torch.randn(1, 2, 36) + 5
+                true_y = odeint(VL20(), true_y0, t, method='rk4', options={'step_size': step})
+                if check_disk:
+                    np.save('data/%s/true_y_%.3fstep.npy' % (dataset, rstep), true_y)
+                true_y0_test = true_y[-1]
+                true_y = true_y[:-1]
+                true_y_test = odeint(VL20(), true_y0_test, t[:steps_burn + steps_test + steps_valid],
+                                     method='rk4', options={'step_size': step})
     # Two level Lorenz - just used the DAPPER implementation here since we didn't need the ability to
     # differentiably forward integrate
     elif dataset == 'lorenzuv':
@@ -114,40 +162,13 @@ def gen_data(dataset, t, steps_test, steps_valid, step = None, check_disk = True
                 true_y = true_y[:-1].unsqueeze(1)
                 true_y_test = custom_int(true_y0_test, etd_rk4_wrapper(), steps_test + steps_valid).unsqueeze(1)
             else:
-                # Arbitrary point generated from random sampling and burn in. Used a consistent point to avoid
-                # needing to burn in every time data was regenerated.
-                true_y0 = torch.Tensor([[ 2.29686202e+00,  9.07480719e-01, -1.21535431e+00, -2.46597639e+00,
-                                           -2.37382655e+00, -1.71890991e+00, -1.23758130e+00, -1.11598678e+00,
-                                           -1.16453894e+00, -1.11813720e+00, -8.19511004e-01, -2.41798905e-01,
-                                            5.43700297e-01,  1.30149669e+00,  1.53906452e+00,  7.73817686e-01,
-                                           -7.21660730e-01, -1.87860814e+00, -2.02435873e+00, -1.44080672e+00,
-                                           -7.16573648e-01, -2.20952734e-01, -5.96580541e-02, -1.57080157e-01,
-                                           -3.15456291e-01, -3.12828107e-01, -1.00713424e-02,  5.91315511e-01,
-                                            1.30884300e+00,  1.71446050e+00,  1.28252287e+00,  1.88342453e-08,
-                                           -1.28252285e+00, -1.71446050e+00, -1.30884302e+00, -5.91315530e-01,
-                                            1.00713291e-02,  3.12828101e-01,  3.15456292e-01,  1.57080162e-01,
-                                            5.96580570e-02,  2.20952732e-01,  7.16573640e-01,  1.44080671e+00,
-                                            2.02435873e+00,  1.87860815e+00,  7.21660756e-01, -7.73817668e-01,
-                                           -1.53906452e+00, -1.30149670e+00, -5.43700316e-01,  2.41798889e-01,
-                                            8.19510999e-01,  1.11813721e+00,  1.16453896e+00,  1.11598679e+00,
-                                            1.23758128e+00,  1.71890986e+00,  2.37382650e+00,  2.46597644e+00,
-                                            1.21535451e+00, -9.07480490e-01, -2.29686192e+00, -2.23904310e+00,
-                                           -1.34378586e+00, -2.78424200e-01,  7.68161976e-01,  1.77975603e+00,
-                                            2.42574991e+00,  1.98626067e+00,  2.28283747e-01, -1.68841340e+00,
-                                           -2.42970158e+00, -2.03938025e+00, -1.30264199e+00, -6.80485452e-01,
-                                           -1.63246561e-01,  4.09105753e-01,  1.01236550e+00,  1.24803367e+00,
-                                            5.81167008e-01, -8.92285771e-01, -2.18463290e+00, -2.51042305e+00,
-                                           -2.03375428e+00, -1.33100283e+00, -7.88227006e-01, -4.96947128e-01,
-                                           -3.62235075e-01, -2.08197222e-01,  1.40131073e-01,  7.70184071e-01,
-                                            1.56512259e+00,  2.05755972e+00,  1.56436914e+00, -9.64891121e-09,
-                                           -1.56436915e+00, -2.05755971e+00, -1.56512258e+00, -7.70184056e-01,
-                                           -1.40131062e-01,  2.08197229e-01,  3.62235079e-01,  4.96947128e-01,
-                                            7.88227003e-01,  1.33100282e+00,  2.03375427e+00,  2.51042305e+00,
-                                            2.18463290e+00,  8.92285782e-01, -5.81167006e-01, -1.24803369e+00,
-                                           -1.01236553e+00, -4.09105782e-01,  1.63246542e-01,  6.80485460e-01,
-                                            1.30264203e+00,  2.03938031e+00,  2.42970159e+00,  1.68841327e+00,
-                                           -2.28283972e-01, -1.98626083e+00, -2.42574993e+00, -1.77975599e+00,
-                                           -7.68161950e-01,  2.78424179e-01,  1.34378581e+00,  2.23904308e+00]])
+                # Generate initial point from Dapper
+                grid = 32 * np.pi * torch.linspace(0, 1, 128 + 1)[1:]
+                x0_Kassam = torch.cos(grid / 16) * (1 + torch.sin(grid / 16))
+                x0 = x0_Kassam.clone().unsqueeze(0)
+                for _ in range(150):
+                    x0 = custom_int(x0, etd_rk4_wrapper(), 150)[-1:]
+                true_y0 = custom_int(x0, etd_rk4_wrapper(), 10**3)[-1:]
                 true_y = custom_int(true_y0, etd_rk4_wrapper(), t.shape[0])
                 if check_disk:
                     np.save('data/%s/true_y_%.3fstep.npy' % (dataset, rstep), true_y)

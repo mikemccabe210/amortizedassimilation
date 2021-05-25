@@ -50,16 +50,51 @@ lorenz_configs = {
                          lambda x: x % 2 == 0)
 }
 
+vl_n = 36
+
+vl_configs = {
+    # Observe the full state every step
+    'full_obs' :   ( {'0': vl_n},
+                    {'0': filter_obs(torch.arange(vl_n))},
+                    {'0': torch.arange(vl_n)},
+                    lambda x: True),
+    # Observe every 4th dim each step
+    'every_4th_dim_partial_obs' : ({'0': vl_n // 4, '1': vl_n // 4, '2': vl_n // 4, '3': vl_n // 4},
+               {'0': filter_obs(torch.arange(vl_n)[0 :vl_n: 4]),
+               '1': filter_obs(torch.arange(vl_n)[1 :vl_n: 4]),
+               '2': filter_obs(torch.arange(vl_n)[2 :vl_n: 4]),
+               '3': filter_obs(torch.arange(vl_n)[3 :vl_n: 4])},
+             {'0': torch.arange(vl_n)[0 :vl_n: 4],
+               '1': torch.arange(vl_n)[1 :vl_n: 4],
+               '2': torch.arange(vl_n)[2 :vl_n: 4],
+               '3': torch.arange(vl_n)[3 :vl_n: 4]},
+                lambda x: True),
+    # 'randomized_obs' : ()
+    # Observe either every 4th dim or a randomly projected feature set
+    'unstructured_partial_obs': ({'0': vl_n // 4, '1': vl_n // 4, '2': vl_n // 4, '3': vl_n // 4,
+                  '4': vl_n//4, '5': vl_n//4, '6': vl_n//4, '7': vl_n//4},
+                    {'0': filter_obs(torch.arange(vl_n)[0 :vl_n: 4]),
+                        '1': mystery_operator(),
+                    '2': filter_obs(torch.arange(vl_n)[1 :vl_n: 4]),
+                        '3': mystery_operator(),
+                    '4': filter_obs(torch.arange(vl_n)[2 :vl_n: 4]),
+                        '5': mystery_operator(),
+                    '6' : filter_obs(torch.arange(vl_n)[3 :vl_n: 4]),
+                        '7': mystery_operator()},
+                         lambda x: x % 2 == 0)
+}
+ks_n = 128
 KS_configs = {
     # Observe the full state every step
-    'full_obs' :   ( {'0': 128},
-                    {'0': filter_obs(torch.arange(128))},
-                     {'0':torch.arange(128)},
+    'full_obs' :   ( {'0': ks_n},
+                    {'0': filter_obs(torch.arange(ks_n))},
+                     {'0':torch.arange(ks_n)},
                     lambda x: True),
-    'partial_obs': ({'0': 64},
-                 {'0': filter_obs(torch.arange(n)[0 :128: 2]),
-               '1': filter_obs(torch.arange(n)[1 :128: 2])},
-                    {'0': torch.arange(n)[0:128: 2],
-                     '1': torch.arange(n)[1:128: 2]},
+    'partial_obs': ({'0': 64.,
+                     '1': 64.},
+                 {'0': filter_obs(torch.arange(ks_n)[0 :ks_n: 2]),
+               '1': filter_obs(torch.arange(ks_n)[1 :ks_n: 2])},
+                    {'0': torch.arange(ks_n)[0:ks_n: 2],
+                     '1': torch.arange(ks_n)[1:ks_n: 2]},
                  lambda x: True),
 }
