@@ -284,12 +284,12 @@ class ConvEnAF2d(nn.Module):
                       groups=1),
             nn.LayerNorm([hidden_size,1, state_size], elementwise_affine=False),
             nn.LeakyReLU(),
-                nn.Dropout2d(do),
-            nn.Conv2d(hidden_size, hidden_size, kernel_size=(1, 5),
-                      padding=(0, 2), dilation=1, padding_mode='circular',
-                      groups=1),
-            nn.LayerNorm([hidden_size, 1, state_size], elementwise_affine=False),
-            nn.LeakyReLU()
+            #     nn.Dropout2d(do),
+            # nn.Conv2d(hidden_size, hidden_size, kernel_size=(1, 5),
+            #           padding=(0, 2), dilation=1, padding_mode='circular',
+            #           groups=1),
+            # nn.LayerNorm([hidden_size, 1, state_size], elementwise_affine=False),
+            # nn.LeakyReLU()
             )
 
         self.readout = nn.Sequential(
@@ -358,7 +358,7 @@ class ConvEnAF2d(nn.Module):
             state = state.unsqueeze(1)
             observation = observation.unsqueeze(1)
             ddt = ddt.unsqueeze(1)
-        observation = observation.reshape(-1, self.in_channels, self.n_o).squeeze()
+        observation = observation.reshape(-1, self.in_channels, self.n_o)#.squeeze()
         if mask is None:
             c_in = observation #torch.stack([observation , ddt, ], dim=1)
         else:
@@ -379,7 +379,7 @@ class ConvEnAF2d(nn.Module):
                                                   self.in_channels, self.mem_channels], 1)
         # Autoregressive state estimate updates
         memory = torch.sigmoid(mem_clear) * memory + x_mem  # * filt_mem
-        x = torch.sigmoid(filt.squeeze()) * state + adj.squeeze()
+        x = torch.sigmoid(filt) * state + adj
         # Implement option of variance ifnlation
         if self.inflate != 1:
             abnorm = x.view(-1, self.m, self.n_o)
@@ -393,6 +393,7 @@ class ConvEnAF2d(nn.Module):
         # made more sense.
         # print(interval, int_kwargs)
         # print(x.shape)
+        # print(x.shape)
         state = odeint(self.ode_func, x, interval, **int_kwargs)[-1]
         # print(state.shape)
 
@@ -400,9 +401,9 @@ class ConvEnAF2d(nn.Module):
         self.ode_func.fe = 0
 
         # Reshape outputs
-        ens = x.view(-1, self.m, self.in_channels, self.n_o).squeeze()
+        ens = x.view(-1, self.m, self.in_channels, self.n_o).squeeze(2)
         analysis = ens.mean(dim=1)
-        state = state.view(-1, self.m, self.in_channels, self.n_o).squeeze()
+        state = state.view(-1, self.m, self.in_channels, self.n_o).squeeze(2)
         # print('end', ens.shape, state.shape)
 
         return analysis, state, ens, memory

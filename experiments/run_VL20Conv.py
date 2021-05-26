@@ -73,8 +73,8 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
                                       obs_type = obs_type
                                                )
             # Clamping into a reasonable range helps avoid divergence early in training
-            pred_y = torch.clamp(pred_y, -20, 20)
-            pred_y1 = torch.clamp(pred_y1, -20, 20)
+            # pred_y = torch.clamp(pred_y, -20, 20)
+            # pred_y1 = torch.clamp(pred_y1, -20, 20)
 
             # Build outputs
             ensembles += [ens]
@@ -104,8 +104,9 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
         # Loss functions
         # noisy_analysis_loss = torch.mean(torch.sum((filtered_pred[1:] - filt_y[1:])**2, dim = 2))
         # Mean
+        # print(filtered_pred_y1.shape, filt_y.shape)
         forecast_loss = torch.mean(torch.sum((filtered_pred_y1[known_inds_tp1].mean(dim = 2)
-                                      - filt_y[known_inds_t])**2, dim = 2))
+                                      - filt_y[known_inds_t])**2, dim = -1).sum(-1))
         # Random entry
         # print(filtered_pred_y1[known_inds_tp1].shape)
         # print(filtered_pred_y1[known_inds_tp1][torch.arange(len(known_inds_tp1)).unsqueeze(1),
@@ -129,7 +130,7 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
         # print(pvar_list.shape)
         prior_loss = torch.mean((priors_list[1:] - pred_y_list[1:])**2/(pvar_list[1:] + 1e-7)
                                            + .5 * torch.log1p(pvar_list[1:] - 1 + 1e-7))
-        total_loss = forecast_loss + prior_loss
+        total_loss = forecast_loss #+ prior_loss
         total_loss.backward()
         optimizer.step()
         scheduler.step()
@@ -177,8 +178,10 @@ def assimilate_unseen_obs_ens(model, noise, data, state, m, obs_dict, indices, d
     for i, obsi in enumerate(data):
         # Masking
         if missing:
-            obs = state.detach()[:, torch.randperm(m), :] 
-            obs[:, :, indices[str(i %  len(obs_dict))]] = (obs_dict[str(i % len(obs_dict))](obsi)).unsqueeze(1).repeat(1, m, 1, 1)
+            # print(obsi.shape, state.shape)
+            obs = state.detach()[:, torch.randperm(m), :]
+            # print(obs.shape, obsi.shape)
+            obs[:, :, :, indices[str(i %  len(obs_dict))]] = (obs_dict[str(i % len(obs_dict))](obsi)).unsqueeze(1).repeat(1, m, 1, 1)
             # obs += torch.randn_like(obs)*noise
             mask = torch.ones(obs.shape[0], m,  36, device = device) * -.1
             mask[:, :, indices[str(i % len(obs_dict))]] = .1
@@ -212,7 +215,7 @@ if __name__ == '__main__':
     parser.add_argument('--m', type=int, default=10)
     parser.add_argument('--n', type=int, default=36)
     parser.add_argument('--hidden_size', type=int, default=64)
-    parser.add_argument('--noise', type=float, default=1.)
+    parser.add_argument('--noise', type=float, default=0.)
     parser.add_argument('--epochs', type=int, default=500)
     parser.add_argument('--steps_valid', type=int, default=1000)
     parser.add_argument('--steps_test', type=int, default=10000)
@@ -256,7 +259,7 @@ if __name__ == '__main__':
     print('Param Count', sum([np.prod(p.size()) for p in model_parameters]))
     # model.load_state_dict(torch.load('models/2021-05-21_09-00lorenz96_partial_1.0std_64layers/final_convref_lorenz96_partial_0.6326_1.0std_500iters_64filt'))
     model = model.to(device = device)
-    optimizer = optim.AdamW(model.parameters(), lr=8e-4, weight_decay = 0)
+    optimizer = optim.AdamW(model.parameters(), lr=2e-4, weight_decay = 0)
     # optimizer = topt.Apollo(model.parameters(), lr=5e-3, init_lr=1e-5, warmup=2000)
     # optimizer = topt.Shampoo(model.parameters(), lr=1e-2)
     dummy_sched = dummy()
