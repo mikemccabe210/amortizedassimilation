@@ -24,10 +24,7 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
         noiseless = batch_y0.clone().detach()
         # Generate noisy batch
         batch_y0 += torch.randn_like(batch_y0, device=device) * noise
-        # states = torch.zeros_like(batch_y0)[0]
-
         # Sample from prior
-        # print(noiseless.shape)
         pred_y1 = noiseless[0].unsqueeze(1).repeat(1, m, 1, 1)
         pred_y1 = pred_y1 + torch.randn_like(pred_y1, device=device)*noise
 
@@ -55,14 +52,13 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
             i_type = next_type 
             # Masking
             if missing:
-                # print(pred_y1.shape, indices[str(i_type % ntypes)], xi.shape, torch.randperm(m))
                 x = pred_y1.detach()[:, torch.randperm(m), :, :]
                 x[:, :, :, indices[str(i_type % ntypes)]] = (obs_dict[str(i_type % ntypes)](xi)).unsqueeze(1).repeat(1, m, 1, 1)
-                # x = x + torch.randn_like(x)*noise
                 mask = torch.ones(x.shape[0], m,  36, device = device) * -.1
                 mask[:, :, indices[str(i_type % ntypes)]] = .1
                 obs_type = '0'
             else:
+                # Not actually positive this path works
                 x = obs_dict[str(i_type % ntypes)](xi).unsqueeze(1).repeat(1, m, 1, 1)
                 mask = None
                 obs_type = '0'
@@ -72,10 +68,6 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
             pred_y, pred_y1, ens, memory = model(x, pred_y1, memory, mask,
                                       obs_type = obs_type
                                                )
-            # Clamping into a reasonable range helps avoid divergence early in training
-            # pred_y = torch.clamp(pred_y, -20, 20)
-            # pred_y1 = torch.clamp(pred_y1, -20, 20)
-
             # Build outputs
             ensembles += [ens]
             preds_y += [pred_y]
@@ -104,33 +96,10 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
         # Loss functions
         # noisy_analysis_loss = torch.mean(torch.sum((filtered_pred[1:] - filt_y[1:])**2, dim = 2))
         # Mean
-        # print(filtered_pred_y1.shape, filt_y.shape)
-        forecast_loss = torch.mean(torch.sum((filtered_pred_y1[known_inds_tp1].mean(dim = 2)
-                                      - filt_y[known_inds_t])**2, dim = -1).sum(-1))
-        # print(forecast_loss)
-        # Random entry
-        # print(filtered_pred_y1[known_inds_tp1].shape)
-        # print(filtered_pred_y1[known_inds_tp1][torch.arange(len(known_inds_tp1)).unsqueeze(1),
-        #                                                                        torch.arange(filtered_pred_y1.shape[1]).unsqueeze(0).repeat(len(known_inds_tp1), 1),
-        #                                                                        torch.randint(0, m, (len(known_inds_tp1),)).unsqueeze(1)].shape)
-        # print(filt_y[known_inds_t].shape)
-        # for_set = filtered_pred_y1[known_inds_tp1][:, :, :m//2]
-        # print(for_set.shape)
-        # filtered_pred_y1[known_inds_tp1][torch.arange(len(known_inds_tp1)).unsqueeze(1),
-        #                                  torch.arange(filtered_pred_y1.shape[1]).unsqueeze(0).repeat(
-        #                                      len(known_inds_tp1), 1),
-        #                                  torch.randint(0, m, (len(known_inds_tp1), m // 2))]
-        # forecast_loss = torch.mean(torch.sum((for_set.mean(dim = 2)
-        #                               - filt_y[known_inds_t])**2, dim = 2))
-        # forecast_loss.backward()
-
-        # forecast_loss = torch.mean(torch.mean(((filtered_pred_y1[known_inds_tp1].mean(dim = 2)
-        #                               - filt_y[known_inds_t])/noise)**2, dim = 2))
-        # print(pred_y_list.shape)
-        # print(priors_list.shape)
-        # print(pvar_list.shape)
-        prior_loss = torch.mean((priors_list[1:] - pred_y_list[1:])**2/(pvar_list[1:] + 1e-7)
-                                           + .5 * torch.log1p(pvar_list[1:] - 1 + 1e-7))
+        forecast_loss = torch.mean(torch.mean(((filtered_pred_y1[known_inds_tp1].mean(dim = 2)
+                                      - filt_y[known_inds_t])/noise)**2, dim = 2))
+        # prior_loss = torch.mean((priors_list[1:] - pred_y_list[1:])**2/(pvar_list[1:] + 1e-7)
+        #                                    + .5 * torch.log1p(pvar_list[1:] - 1 + 1e-7))
         total_loss = forecast_loss #+ prior_loss
         total_loss.backward()
         optimizer.step()
@@ -259,11 +228,8 @@ if __name__ == '__main__':
     # Get param count
     model_parameters = filter(lambda p: p.requires_grad, model.parameters())
     print('Param Count', sum([np.prod(p.size()) for p in model_parameters]))
-    # model.load_state_dict(torch.load('models/2021-05-21_09-00lorenz96_partial_1.0std_64layers/final_convref_lorenz96_partial_0.6326_1.0std_500iters_64filt'))
     model = model.to(device = device)
-    optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay = 0)
-    # optimizer = topt.Apollo(model.parameters(), lr=5e-3, init_lr=1e-5, warmup=2000)
-    # optimizer = topt.Shampoo(model.parameters(), lr=1e-2)
+    optimizer = optim.AdamW(model.parameters(), lr=8e-4, weight_decay=0)
     dummy_sched = dummy()
     dummy_sched.step = lambda: None
     
@@ -284,14 +250,10 @@ if __name__ == '__main__':
     train_losses = []
     test_losses = []
     for itr in range(1, args.epochs + 1):
-        # torch.manual_seed(0)
         if itr <= 50:
             optimizer.param_groups[0]['lr'] *= 1.03
         if (itr+1) % 200 == 0:
             optimizer.param_groups[0]['lr'] /= 2
-        # model.input_mods['0'].inflate += .01
-        # if itr < 400:
-        #     continue
         tloss = train(itr, loader, args.noise, args.m, model, optimizer, dummy_sched, obs_dict, indices, device, missing)
         loss = test(itr, start_time, true_y_valid, args.noise, args.m, model, obs_dict, indices, device, missing)
         train_losses.append(tloss.item())

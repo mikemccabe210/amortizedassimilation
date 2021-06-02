@@ -1,6 +1,5 @@
 import torch
 import torch.optim as optim
-import torch_optimizer as topt
 import os
 import argparse
 import time
@@ -56,7 +55,6 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
             if missing:
                 x = pred_y1.detach()[:, torch.randperm(m), :] 
                 x[:, :, indices[str(i_type % ntypes)]] = (obs_dict[str(i_type % ntypes)](xi)).unsqueeze(1).repeat(1, m, 1)
-                # x = x + torch.randn_like(x)*noise
                 mask = torch.ones(x.shape[0], m,  40, device = device) * -.1
                 mask[:, :, indices[str(i_type % ntypes)]] = .1
                 obs_type = '0'
@@ -91,43 +89,16 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
             
         # Concat outputs
         pred_y_list = torch.stack(preds_y)
-        # pred_y1_list = torch.stack(preds_y1)
-        # filtered_pred = torch.stack(preds_y_filt)
         filtered_pred_y1 = torch.stack(preds_y1_filt)
         filt_y = torch.stack(filts_y)
-        priors_list = torch.stack(priors)
-        pvar_list = torch.stack(prior_vars)
-        ens_list = torch.stack(ensembles)
 
         # Loss functions
-        # noisy_analysis_loss = torch.mean(torch.sum((filtered_pred[1:] - filt_y[1:])**2, dim = 2))
         # Mean
         forecast_loss = torch.mean(torch.sum((filtered_pred_y1[known_inds_tp1].mean(dim = 2)
                                       - filt_y[known_inds_t])**2, dim = 2))
-        # Random entry
-        # print(filtered_pred_y1[known_inds_tp1].shape)
-        # print(filtered_pred_y1[known_inds_tp1][torch.arange(len(known_inds_tp1)).unsqueeze(1),
-        #                                                                        torch.arange(filtered_pred_y1.shape[1]).unsqueeze(0).repeat(len(known_inds_tp1), 1),
-        #                                                                        torch.randint(0, m, (len(known_inds_tp1),)).unsqueeze(1)].shape)
-        # print(filt_y[known_inds_t].shape)
-        # for_set = filtered_pred_y1[known_inds_tp1][:, :, :m//2]
-        # print(for_set.shape)
-        # filtered_pred_y1[known_inds_tp1][torch.arange(len(known_inds_tp1)).unsqueeze(1),
-        #                                  torch.arange(filtered_pred_y1.shape[1]).unsqueeze(0).repeat(
-        #                                      len(known_inds_tp1), 1),
-        #                                  torch.randint(0, m, (len(known_inds_tp1), m // 2))]
-        # forecast_loss = torch.mean(torch.sum((for_set.mean(dim = 2)
-        #                               - filt_y[known_inds_t])**2, dim = 2))
-        # forecast_loss.backward()
-
-        # forecast_loss = torch.mean(torch.mean(((filtered_pred_y1[known_inds_tp1].mean(dim = 2)
-        #                               - filt_y[known_inds_t])/noise)**2, dim = 2))
-        # print(pred_y_list.shape)
-        # print(priors_list.shape)
-        # print(pvar_list.shape)
-        prior_loss = torch.mean((priors_list[1:] - pred_y_list[1:])**2/(pvar_list[1:] + 1e-7)
-                                           + .5 * torch.log1p(pvar_list[1:] - 1 + 1e-7))
-        total_loss = forecast_loss + prior_loss
+        # prior_loss = torch.mean((priors_list[1:] - pred_y_list[1:])**2/(pvar_list[1:] + 1e-7)
+        #                                    + .5 * torch.log1p(pvar_list[1:] - 1 + 1e-7))
+        total_loss = forecast_loss #+ prior_loss
         total_loss.backward()
         optimizer.step()
         scheduler.step()
@@ -167,8 +138,6 @@ def assimilate_unseen_obs_ens(model, noise, data, state, m, obs_dict, indices, d
     """ Executes online assimilation"""
     preds = []
     states = []
-    filtered_preds = []
-    filtered_obs = []
     ensembles = []
     memory = torch.zeros(m, 6, 40, device = device)
     
@@ -177,7 +146,6 @@ def assimilate_unseen_obs_ens(model, noise, data, state, m, obs_dict, indices, d
         if missing:
             obs = state.detach()[:, torch.randperm(m), :] 
             obs[:, :, indices[str(i %  len(obs_dict))]] = (obs_dict[str(i % len(obs_dict))](obsi)).unsqueeze(1).repeat(1, m, 1)
-            # obs += torch.randn_like(obs)*noise
             mask = torch.ones(obs.shape[0], m,  40, device = device) * -.1
             mask[:, :, indices[str(i % len(obs_dict))]] = .1
             obs_type = '0'
@@ -236,8 +204,7 @@ if __name__ == '__main__':
     t = torch.arange(0, args.train_steps*args.step_size, args.step_size)
     true_y, true_y_valid, true_y_test = gen_data('lorenz96', t, args.steps_test,
                                                  args.steps_valid, check_disk=args.check_disk)
-    # print(true_y.max(dim = 0))
-    
+
     # Set up obs operators - uses full obs for input types since only one network is used
     input_types, obs_dict, indices, known_h = obs_configs.lorenz_configs[args.obs_conf]
     input_types, _, _, known_h = obs_configs.lorenz_configs['full_obs']
@@ -252,11 +219,8 @@ if __name__ == '__main__':
     # Get param count
     model_parameters = filter(lambda p: p.requires_grad, model.parameters())
     print('Param Count', sum([np.prod(p.size()) for p in model_parameters]))
-    # model.load_state_dict(torch.load('models/2021-05-21_09-00lorenz96_partial_1.0std_64layers/final_convref_lorenz96_partial_0.6326_1.0std_500iters_64filt'))
     model = model.to(device = device)
     optimizer = optim.AdamW(model.parameters(), lr=8e-4, weight_decay = 0)
-    # optimizer = topt.Apollo(model.parameters(), lr=5e-3, init_lr=1e-5, warmup=2000)
-    # optimizer = topt.Shampoo(model.parameters(), lr=1e-2)
     dummy_sched = dummy()
     dummy_sched.step = lambda: None
     
@@ -282,9 +246,6 @@ if __name__ == '__main__':
             optimizer.param_groups[0]['lr'] *= 1.03
         if (itr+1) % 200 == 0:
             optimizer.param_groups[0]['lr'] /= 2
-        # model.input_mods['0'].inflate += .01
-        # if itr < 400:
-        #     continue
         tloss = train(itr, loader, args.noise, args.m, model, optimizer, dummy_sched, obs_dict, indices, device, missing)
         loss = test(itr, start_time, true_y_valid, args.noise, args.m, model, obs_dict, indices, device, missing)
         train_losses.append(tloss.item())

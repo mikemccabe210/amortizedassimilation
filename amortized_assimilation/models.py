@@ -519,12 +519,7 @@ class MultiObs_KSConvEnAF2d(nn.Module):
 
 
 class EnAF(nn.Module):
-    """ Ensemble Amortized Filter
-
-    Used to assimilate a specific observation type. The EnAF trains
-    a regression model to predict the next noisy observation using
-    the current noisy observation and an a priori specified set
-    of differentiable system dynamics.
+    """ Feedforward amortized filter. Older code and not used in paper, but left as an example.
 
     Args
     ----

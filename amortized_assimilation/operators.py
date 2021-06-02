@@ -13,7 +13,7 @@ def filter_obs(filt):
 
 def mystery_operator():
     """ Creates a random projection matrix for
-    random lossy feature generation """
+    random lossy feature generation. """
     proj = torch.randn(40, 10)
     def inner(x):
         return x @ proj
