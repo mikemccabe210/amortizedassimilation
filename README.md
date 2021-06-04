@@ -1,6 +1,6 @@
 # Amortized Assimilation
 
-This respository contains a PyTorch implementation of the (WIP) paper *Learning to Assimilate in Chaotic Dynamical
+This respository contains a PyTorch implementation of the paper *Learning to Assimilate in Chaotic Dynamical
 Systems*. 
 
 Abstract: The accuracy of simulation-based forecasting in chaotic systems, such as those found in weather and climate settings, is
