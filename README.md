@@ -80,6 +80,9 @@ Code is included for generating the Lorenz 96, VL 20 and KS datasets. This can b
 
 DAPPER: Raanes, P. N., & others. (2018). nansencenter/DAPPER: Version 0.8. https://doi.org/10.5281/zenodo.2029296
 
+## Acknowledgements
+
+This material is based upon work supported by the National Science Foundation under Grant No. 1835825. Any opinions, findings, and conclusions or recommendations expressed in this material are those of the author(s) and do not necessarily reflect the views of the National Science Foundation.
 ---
 
 If you found the code or ideas in this repository useful, please consider citing:
