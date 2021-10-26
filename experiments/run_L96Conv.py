@@ -75,7 +75,10 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
 
             # Build outputs
             if loss_type in ['ss_analysis', 'clean_analysis']:
-                prey_y1 = pred_y1.detach()
+                # Analysis losses don't use differentiable simulation
+                # Otherwise the loss ends up being more or less the same minus
+                # shifts after unrolling
+                pred_y1 = pred_y1.detach()
             ensembles += [ens]
             preds_y += [pred_y]
             filts_y += [y]
