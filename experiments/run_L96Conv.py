@@ -12,7 +12,8 @@ from torch.utils.data import DataLoader
 from amortized_assimilation.data_utils import ChunkedTimeseries, L96, TimeStack, gen_data
 from amortized_assimilation.models import MultiObs_ConvEnAF
 
-def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indices, device, missing = False):
+def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indices, device, missing = False,
+          loss_type='ss_forecast'):
     """ Training loop """
     ntypes = len(obs_dict)
     var_ra = None
@@ -73,6 +74,8 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
             pred_y1 = torch.clamp(pred_y1, -20, 20)
 
             # Build outputs
+            if loss_type in ['ss_analysis', 'clean_analysis']:
+                prey_y1 = pred_y1.detach()
             ensembles += [ens]
             preds_y += [pred_y]
             filts_y += [y]
@@ -89,16 +92,26 @@ def train(epoch, loader, noise, m, model, optimizer, scheduler, obs_dict, indice
             
         # Concat outputs
         pred_y_list = torch.stack(preds_y)
+        filtered_pred_y = torch.stack(preds_y_filt)
         filtered_pred_y1 = torch.stack(preds_y1_filt)
         filt_y = torch.stack(filts_y)
 
         # Loss functions
         # Mean
-        forecast_loss = torch.mean(torch.sum((filtered_pred_y1[known_inds_tp1].mean(dim = 2)
-                                      - filt_y[known_inds_t])**2, dim = 2))
+        if loss_type == 'ss_forecast':
+            forecast_loss = torch.mean(torch.sum((filtered_pred_y1[known_inds_tp1].mean(dim = 2)
+                                          - filt_y[known_inds_t])**2, dim = 2))
+            total_loss = forecast_loss
+        elif loss_type == 'ss_analysis':
+            analysis_ss_loss = torch.mean(torch.sum((filtered_pred_y[known_inds_t]
+                                          - filt_y[known_inds_t])**2, dim = 2))
+            total_loss = analysis_ss_loss
+        elif loss_type == 'clean_analysis':
+            analysis_clean_loss = torch.mean(torch.mean((filtered_pred_y[known_inds_t]
+                                          - noiseless[known_inds_t])**2, dim = 2))
+            total_loss = analysis_clean_loss
         # prior_loss = torch.mean((priors_list[1:] - pred_y_list[1:])**2/(pvar_list[1:] + 1e-7)
         #                                    + .5 * torch.log1p(pvar_list[1:] - 1 + 1e-7))
-        total_loss = forecast_loss #+ prior_loss
         total_loss.backward()
         optimizer.step()
         scheduler.step()
@@ -171,6 +184,7 @@ if __name__ == '__main__':
         pass
     parser = argparse.ArgumentParser()
     parser.add_argument('--dynamics', type=str, default='lorenz96')
+    parser.add_argument('--loss_type', type=str, default='ss_forecast') #ss_forecast, ss_analysis, clean_analysis
     parser.add_argument('--train_steps', type=int, default=240_000)
     parser.add_argument('--step_size', type=float, default=.1)
     parser.add_argument('--batch_steps', type=int, default=40)
@@ -232,7 +246,7 @@ if __name__ == '__main__':
     else:
         otype = 'partial'
     folder_name = ("models/" + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')
-                   + "%s_%s_%.1fstd_%dlayers" % (args.dynamics, otype, args.noise, args.hidden_size))
+                   + "%s_%s_%.1fstd_%dlayers_%s" % (args.dynamics, otype, args.noise, args.hidden_size, args.loss_type))
     if not os.path.isdir(folder_name):
         os.makedirs(folder_name)
     start_time = time.time()
@@ -243,10 +257,11 @@ if __name__ == '__main__':
     for itr in range(1, args.epochs + 1):
         # torch.manual_seed(0)
         if itr <= 50:
-            optimizer.param_groups[0]['lr'] *= 1.03
+            optimizer.param_groups[0]['lr'] *= 1.02
         if (itr+1) % 200 == 0:
             optimizer.param_groups[0]['lr'] /= 2
-        tloss = train(itr, loader, args.noise, args.m, model, optimizer, dummy_sched, obs_dict, indices, device, missing)
+        tloss = train(itr, loader, args.noise, args.m, model, optimizer, dummy_sched, obs_dict, indices, device,
+                      missing, loss_type=args.loss_type)
         loss = test(itr, start_time, true_y_valid, args.noise, args.m, model, obs_dict, indices, device, missing)
         train_losses.append(tloss.item())
         test_losses.append(loss.item())
