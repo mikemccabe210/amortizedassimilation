@@ -1,0 +1,163 @@
+Obs Config=partial
+----Noise=1.0----
+Experiment stored at /home/mike/dpr_data/steve/run_2021-01-31__22:56:27
+
+Loading 3936 files from /home/mike/dpr_data/steve/run_2021-01-31__22:56:27
+
+('Climatology', 0)
+	(Climatology(), 3.6173690159513936)
+('Var4D', 0)
+	(Var4D(B='eye', xB=1, Lag=1, nIter=10, wtol=0), 0.9747214223133771)
+('LETKF', 30)
+	(LETKF(N=30, loc_rad=7.0, taper='GC', xN=1.0, g=0, mp=False, infl=1.04, rot=True, fnoise_treatm='Stoch'), 0.642900552225389)
+('LETKF', 5)
+	(LETKF(N=5, loc_rad=2.0, taper='GC', xN=1.0, g=0, mp=False, infl=1.2, rot=True, fnoise_treatm='Stoch'), 1.1759456301157352)
+('LETKF', 10)
+	(LETKF(N=10, loc_rad=4.0, taper='GC', xN=1.0, g=0, mp=False, infl=1.07, rot=False, fnoise_treatm='Stoch'), 0.7684956916278377)
+('LETKF', 15)
+	(LETKF(N=15, loc_rad=4.0, taper='GC', xN=1.0, g=0, mp=False, infl=1.02, rot=False, fnoise_treatm='Stoch'), 0.7051726580653459)
+('LETKF', 20)
+	(LETKF(N=20, loc_rad=4.0, taper='GC', xN=1.0, g=0, mp=False, infl=1.04, rot=True, fnoise_treatm='Stoch'), 0.6762333535057715)
+('iEnKS', 5)
+	(iEnKS(upd_a='Sqrt', N=5, MDA=False, step=False, bundle=False, xN=None, infl=1.0, rot=True, Lag=1, nIter=10, wtol=0), 4.735979497278204)
+('iEnKS', 10)
+	(iEnKS(upd_a='Sqrt', N=10, MDA=False, step=False, bundle=False, xN=None, infl=1.01, rot=False, Lag=1, nIter=10, wtol=0), 4.456227586770958)
+('iEnKS', 15)
+	(iEnKS(upd_a='Sqrt', N=15, MDA=False, step=False, bundle=False, xN=None, infl=1.04, rot=True, Lag=1, nIter=10, wtol=0), 4.0353707147124815)
+('iEnKS', 20)
+	(iEnKS(upd_a='Sqrt', N=20, MDA=False, step=False, bundle=False, xN=None, infl=1.07, rot=True, Lag=1, nIter=10, wtol=0), 0.6953816357414875)
+('iEnKS', 30)
+	(iEnKS(upd_a='Sqrt', N=30, MDA=False, step=False, bundle=False, xN=None, infl=1.04, rot=True, Lag=1, nIter=10, wtol=0), 0.5772927302364207)
+Averages (in time and) over seed.
+Warning: The requested attributes ['F'] were not found among the xpSpace axes (attrs. used as coordinates for the set of experiments). This may be no problem if the attr. is redundant for the coord-sys. However, if it is caused by confusion or mis-spelling, then it is likely to cause mis-interpretation of the shown results.
+
+                    N=None  __5___  __30__  __10__  __15__  __20__
+da_method    xN  ⑊  rmse.a  rmse.a  rmse.a  rmse.a  rmse.a  rmse.a
+-----------  --  -  ------  ------  ------  ------  ------  ------
+Climatology      |  3.633                                         
+Var4D            |  1.0                                           
+LETKF         1  |          1.29    0.69    0.79    0.73    0.71  
+iEnKS            |          4.8     0.61    4.59    4.15    0.73  
+
+----Noise=2.5----
+Experiment stored at /home/mike/dpr_data/steve/run_2021-02-01__01:17:49
+
+Loading 3936 files from /home/mike/dpr_data/steve/run_2021-02-01__01:17:49
+
+('Climatology', 0)
+	(Climatology(), 3.6398359629094807)
+('Var4D', 0)
+	(Var4D(B='eye', xB=3, Lag=1, nIter=10, wtol=0), 2.4271116980496794)
+('LETKF', 5)
+	(LETKF(N=5, loc_rad=2.0, taper='GC', xN=1.0, g=0, mp=False, infl=1.1, rot=False, fnoise_treatm='Stoch'), 2.539027035749517)
+('LETKF', 30)
+	(LETKF(N=30, loc_rad=4.0, taper='GC', xN=1.0, g=0, mp=False, infl=1.01, rot=False, fnoise_treatm='Stoch'), 1.8337992764021336)
+('LETKF', 10)
+	(LETKF(N=10, loc_rad=2.0, taper='GC', xN=1.0, g=0, mp=False, infl=1.04, rot=False, fnoise_treatm='Stoch'), 2.065438814998717)
+('LETKF', 15)
+	(LETKF(N=15, loc_rad=2.0, taper='GC', xN=1.0, g=0, mp=False, infl=1.02, rot=False, fnoise_treatm='Stoch'), 1.9998318780298576)
+('LETKF', 20)
+	(LETKF(N=20, loc_rad=4.0, taper='GC', xN=1.0, g=0, mp=False, infl=1.04, rot=False, fnoise_treatm='Stoch'), 1.9181338966194674)
+('iEnKS', 5)
+	(iEnKS(upd_a='Sqrt', N=5, MDA=False, step=False, bundle=False, xN=None, infl=1.01, rot=False, Lag=1, nIter=10, wtol=0), 4.68831369179224)
+('iEnKS', 10)
+	(iEnKS(upd_a='Sqrt', N=10, MDA=False, step=False, bundle=False, xN=None, infl=1.01, rot=False, Lag=1, nIter=10, wtol=0), 4.206235919652198)
+('iEnKS', 15)
+	(iEnKS(upd_a='Sqrt', N=15, MDA=False, step=False, bundle=False, xN=None, infl=1.07, rot=False, Lag=1, nIter=10, wtol=0), 3.3597652152708033)
+('iEnKS', 20)
+	(iEnKS(upd_a='Sqrt', N=20, MDA=False, step=False, bundle=False, xN=None, infl=1.1, rot=False, Lag=1, nIter=10, wtol=0), 2.587716109309085)
+('iEnKS', 30)
+	(iEnKS(upd_a='Sqrt', N=30, MDA=False, step=False, bundle=False, xN=None, infl=1.04, rot=False, Lag=1, nIter=10, wtol=0), 2.0751967926810364)
+Averages (in time and) over seed.
+Warning: The requested attributes ['F'] were not found among the xpSpace axes (attrs. used as coordinates for the set of experiments). This may be no problem if the attr. is redundant for the coord-sys. However, if it is caused by confusion or mis-spelling, then it is likely to cause mis-interpretation of the shown results.
+
+                    N=None  __5___  __30__  __10__  __15__  __20__
+da_method    xN  ⑊  rmse.a  rmse.a  rmse.a  rmse.a  rmse.a  rmse.a
+-----------  --  -  ------  ------  ------  ------  ------  ------
+Climatology      |  3.644                                         
+Var4D            |  2.48                                          
+LETKF         1  |          2.56    1.88    2.11    2.03    1.94  
+iEnKS            |          4.758   2.16    4.24    3.46    2.68  
+
+Obs Config=full
+----Noise=1.0----
+Experiment stored at /home/mike/dpr_data/steve/run_2021-02-01__03:54:57
+
+Loading 3936 files from /home/mike/dpr_data/steve/run_2021-02-01__03:54:57
+
+('Climatology', 0)
+	(Climatology(), 3.6173690159513936)
+('Var4D', 0)
+	(Var4D(B='eye', xB=0.2, Lag=1, nIter=10, wtol=0), 0.38865988924386746)
+('LETKF', 5)
+	(LETKF(N=5, loc_rad=2.0, taper='GC', xN=1.0, g=0, mp=False, infl=1.1, rot=True, fnoise_treatm='Stoch'), 0.3534514953222037)
+('LETKF', 30)
+	(LETKF(N=30, loc_rad=20.0, taper='GC', xN=1.0, g=0, mp=False, infl=1.04, rot=True, fnoise_treatm='Stoch'), 0.2473354400414123)
+('LETKF', 10)
+	(LETKF(N=10, loc_rad=4.0, taper='GC', xN=1.0, g=0, mp=False, infl=1.04, rot=False, fnoise_treatm='Stoch'), 0.2781815547309304)
+('LETKF', 15)
+	(LETKF(N=15, loc_rad=7.0, taper='GC', xN=1.0, g=0, mp=False, infl=1.04, rot=True, fnoise_treatm='Stoch'), 0.25840463344790876)
+('LETKF', 20)
+	(LETKF(N=20, loc_rad=10.0, taper='GC', xN=1.0, g=0, mp=False, infl=1.04, rot=True, fnoise_treatm='Stoch'), 0.2529585592361953)
+('iEnKS', 5)
+	(iEnKS(upd_a='Sqrt', N=5, MDA=False, step=False, bundle=False, xN=None, infl=1.7, rot=True, Lag=1, nIter=10, wtol=0), 4.1737636761808)
+('iEnKS', 10)
+	(iEnKS(upd_a='Sqrt', N=10, MDA=False, step=False, bundle=False, xN=None, infl=2.0, rot=False, Lag=1, nIter=10, wtol=0), 2.758555251658281)
+('iEnKS', 15)
+	(iEnKS(upd_a='Sqrt', N=15, MDA=False, step=False, bundle=False, xN=None, infl=1.1, rot=True, Lag=1, nIter=10, wtol=0), 0.2990699220020162)
+('iEnKS', 20)
+	(iEnKS(upd_a='Sqrt', N=20, MDA=False, step=False, bundle=False, xN=None, infl=1.04, rot=True, Lag=1, nIter=10, wtol=0), 0.24175856477777985)
+('iEnKS', 30)
+	(iEnKS(upd_a='Sqrt', N=30, MDA=False, step=False, bundle=False, xN=None, infl=1.02, rot=True, Lag=1, nIter=10, wtol=0), 0.234888406987185)
+Averages (in time and) over seed.
+Warning: The requested attributes ['F'] were not found among the xpSpace axes (attrs. used as coordinates for the set of experiments). This may be no problem if the attr. is redundant for the coord-sys. However, if it is caused by confusion or mis-spelling, then it is likely to cause mis-interpretation of the shown results.
+
+                    N=None  __5___  __30__  __10__  __15__  __20__
+da_method    xN  ⑊  rmse.a  rmse.a  rmse.a  rmse.a  rmse.a  rmse.a
+-----------  --  -  ------  ------  ------  ------  ------  ------
+Climatology      |  3.633                                         
+Var4D            |  0.396                                         
+LETKF         1  |          0.362   0.254   0.285   0.264   0.26  
+iEnKS            |          4.28    0.2356  2.84    0.42    0.248 
+
+----Noise=2.5----
+Experiment stored at /home/mike/dpr_data/steve/run_2021-02-01__07:35:35
+
+Loading 3936 files from /home/mike/dpr_data/steve/run_2021-02-01__07:35:35
+
+('Climatology', 0)
+	(Climatology(), 3.6398359629094807)
+('Var4D', 0)
+	(Var4D(B='eye', xB=1.25, Lag=1, nIter=10, wtol=0), 0.9728123738750963)
+('LETKF', 5)
+	(LETKF(N=5, loc_rad=2.0, taper='GC', xN=1.0, g=0, mp=False, infl=1.07, rot=False, fnoise_treatm='Stoch'), 1.028975099250601)
+('LETKF', 30)
+	(LETKF(N=30, loc_rad=7.0, taper='GC', xN=1.0, g=0, mp=False, infl=1.04, rot=True, fnoise_treatm='Stoch'), 0.7496908544792147)
+('LETKF', 10)
+	(LETKF(N=10, loc_rad=4.0, taper='GC', xN=1.0, g=0, mp=False, infl=1.07, rot=False, fnoise_treatm='Stoch'), 0.8422522197190072)
+('LETKF', 15)
+	(LETKF(N=15, loc_rad=4.0, taper='GC', xN=1.0, g=0, mp=False, infl=1.07, rot=True, fnoise_treatm='Stoch'), 0.8054191344678759)
+('LETKF', 20)
+	(LETKF(N=20, loc_rad=4.0, taper='GC', xN=1.0, g=0, mp=False, infl=1.04, rot=True, fnoise_treatm='Stoch'), 0.7786203323319097)
+('iEnKS', 5)
+	(iEnKS(upd_a='Sqrt', N=5, MDA=False, step=False, bundle=False, xN=None, infl=2.0, rot=True, Lag=1, nIter=10, wtol=0), 4.125961575425246)
+('iEnKS', 10)
+	(iEnKS(upd_a='Sqrt', N=10, MDA=False, step=False, bundle=False, xN=None, infl=2.0, rot=True, Lag=1, nIter=10, wtol=0), 2.6609559673738685)
+('iEnKS', 15)
+	(iEnKS(upd_a='Sqrt', N=15, MDA=False, step=False, bundle=False, xN=None, infl=1.2, rot=True, Lag=1, nIter=10, wtol=0), 1.2068099444651743)
+('iEnKS', 20)
+	(iEnKS(upd_a='Sqrt', N=20, MDA=False, step=False, bundle=False, xN=None, infl=1.07, rot=True, Lag=1, nIter=10, wtol=0), 0.7897113440937745)
+('iEnKS', 30)
+	(iEnKS(upd_a='Sqrt', N=30, MDA=False, step=False, bundle=False, xN=None, infl=1.04, rot=True, Lag=1, nIter=10, wtol=0), 0.7065325257746606)
+Averages (in time and) over seed.
+Warning: The requested attributes ['F'] were not found among the xpSpace axes (attrs. used as coordinates for the set of experiments). This may be no problem if the attr. is redundant for the coord-sys. However, if it is caused by confusion or mis-spelling, then it is likely to cause mis-interpretation of the shown results.
+
+                    N=None  __5___  __30__  __10__  __15__  __20__
+da_method    xN  ⑊  rmse.a  rmse.a  rmse.a  rmse.a  rmse.a  rmse.a
+-----------  --  -  ------  ------  ------  ------  ------  ------
+Climatology      |  3.644                                         
+Var4D            |  0.99                                          
+LETKF         1  |          1.052   0.781   0.859   0.816   0.805 
+iEnKS            |          4.15    0.72    2.7     1.23    0.812 
+
+

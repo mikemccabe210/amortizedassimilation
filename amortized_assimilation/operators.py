@@ -3,7 +3,9 @@ import torch
 def filter_obs(filt):
     """ Observes the specified coordinates """
     def inner(x):
-        if len(x.shape) == 3:
+        if len(x.shape) == 4:
+            return x[:, :, :, filt]
+        elif len(x.shape) == 3:
             return x[:, :, filt]
         else:
             return x[:, filt]
@@ -11,7 +13,7 @@ def filter_obs(filt):
 
 def mystery_operator():
     """ Creates a random projection matrix for
-    random lossy feature generation """
+    random lossy feature generation. """
     proj = torch.randn(40, 10)
     def inner(x):
         return x @ proj
