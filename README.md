@@ -10,9 +10,7 @@ observations and numerical models of system dynamics to produce effective estima
 introduce *amortized assimilation*, a framework for learning to assimilate in dynamical 
 systems from sequences of noisy observations with no need for ground truth data. We motivate the 
 framework by extending powerful results from self-supervised denoising to the dynamical systems 
-setting through the use of differentiable simulation. Experimental results across several benchmark 
-systems highlight the improved effectiveness of our approach over widely-used data assimilation 
-methods.
+setting through the use of differentiable simulation. 
 ## Installation
 
 ### Requirements
