@@ -7,7 +7,7 @@ Abstract: The accuracy of simulation-based forecasting in chaotic systems is hea
 high-quality estimates of the system state at the time the forecast is initialized. Data assimilation 
 methods are used to infer these initial conditions by systematically combining noisy, incomplete 
 observations and numerical models of system dynamics to produce effective estimation schemes. We 
-introduce \textit{amortized assimilation}, a framework for learning to assimilate in dynamical 
+introduce *amortized assimilation*, a framework for learning to assimilate in dynamical 
 systems from sequences of noisy observations with no need for ground truth data. We motivate the 
 framework by extending powerful results from self-supervised denoising to the dynamical systems 
 setting through the use of differentiable simulation. Experimental results across several benchmark 
