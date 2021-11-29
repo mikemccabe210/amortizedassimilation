@@ -1,7 +1,7 @@
 # Amortized Assimilation
 
 This repository contains a PyTorch implementation of the paper *Learning to Assimilate in Chaotic Dynamical
-Systems*. 
+Systems* (https://papers.nips.cc/paper/2021/hash/65cc2c8205a05d7379fa3a6386f710e1-Abstract.html).
 
 Abstract: The accuracy of simulation-based forecasting in chaotic systems is heavily dependent on 
 high-quality estimates of the system state at the time the forecast is initialized. Data assimilation 
